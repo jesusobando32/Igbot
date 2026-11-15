@@ -13,6 +13,7 @@ const CONFIG = {
   statsFile: path.join(__dirname, 'estadisticas.json'),
   errorScreenshot: path.join(__dirname, 'error_screenshot.png'),
   panelHtmlFile: path.join(__dirname, 'panel.html'),
+  dashboardHtmlFile: path.join(__dirname, 'dashboard.html'),
   loginUrl: 'https://www.instagram.com/accounts/login/',
   homeUrl: 'https://www.instagram.com/',
   viewport: { width: 1366, height: 768 },
@@ -40,15 +41,32 @@ function loadStats() {
           parsed.myCommentsByPost && typeof parsed.myCommentsByPost === 'object'
             ? parsed.myCommentsByPost
             : {},
+        postsCatalog:
+          parsed.postsCatalog && typeof parsed.postsCatalog === 'object'
+            ? parsed.postsCatalog
+            : {},
       };
     }
   } catch {}
-  return { totalHistoricalComments: 0, tagCounts: {}, myCommentsByPost: {} };
+  return { totalHistoricalComments: 0, tagCounts: {}, myCommentsByPost: {}, postsCatalog: {} };
 }
 
-function saveStats(stats) {
+function saveStats() {
   try {
-    fs.writeFileSync(CONFIG.statsFile, JSON.stringify(stats, null, 2), 'utf8');
+    fs.writeFileSync(
+      CONFIG.statsFile,
+      JSON.stringify(
+        {
+          totalHistoricalComments: ANALYTICS.totalHistoricalComments,
+          tagCounts: ANALYTICS.tagCounts,
+          myCommentsByPost: ANALYTICS.myCommentsByPost,
+          postsCatalog: ANALYTICS.postsCatalog,
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
   } catch {}
 }
 
@@ -62,6 +80,50 @@ function normalizePostKey(url) {
   return match ? match[1] : String(url || '').trim();
 }
 
+function upsertPostInCatalog(postUrl, patch = {}) {
+  const key = normalizePostKey(postUrl);
+  if (!key) return null;
+  const existing = ANALYTICS.postsCatalog[key] || {
+    postKey: key,
+    postUrl,
+    author: '',
+    caption: '',
+    thumbnail: '',
+    myComments: ANALYTICS.myCommentsByPost[key] || 0,
+    postTotalComments: null,
+    probabilities: { rawPercent: 0, estimatedRealPercent: 0, oneInX: null },
+    savedConfig: {},
+    updatedAt: new Date().toISOString(),
+  };
+
+  const merged = {
+    ...existing,
+    ...patch,
+    postKey: key,
+    postUrl: postUrl || existing.postUrl,
+    savedConfig: {
+      ...(existing.savedConfig || {}),
+      ...(patch.savedConfig || {}),
+    },
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Mantener miniatura previa si el nuevo patch no trae una
+  if (!patch.thumbnail && existing.thumbnail) {
+    merged.thumbnail = existing.thumbnail;
+  }
+  if (!patch.author && existing.author) {
+    merged.author = existing.author;
+  }
+  if (!patch.caption && existing.caption) {
+    merged.caption = existing.caption;
+  }
+
+  ANALYTICS.postsCatalog[key] = merged;
+  saveStats();
+  return merged;
+}
+
 function recordCommentAnalytics(taggedUsers = [], postUrl = '') {
   ANALYTICS.sessionComments += 1;
   ANALYTICS.totalHistoricalComments += 1;
@@ -72,12 +134,12 @@ function recordCommentAnalytics(taggedUsers = [], postUrl = '') {
   if (postUrl) {
     const key = normalizePostKey(postUrl);
     ANALYTICS.myCommentsByPost[key] = (ANALYTICS.myCommentsByPost[key] || 0) + 1;
+    if (ANALYTICS.postsCatalog[key]) {
+      ANALYTICS.postsCatalog[key].myComments = ANALYTICS.myCommentsByPost[key];
+      ANALYTICS.postsCatalog[key].updatedAt = new Date().toISOString();
+    }
   }
-  saveStats({
-    totalHistoricalComments: ANALYTICS.totalHistoricalComments,
-    tagCounts: ANALYTICS.tagCounts,
-    myCommentsByPost: ANALYTICS.myCommentsByPost,
-  });
+  saveStats();
 }
 
 function resetAnalytics() {
@@ -85,7 +147,11 @@ function resetAnalytics() {
   ANALYTICS.totalHistoricalComments = 0;
   ANALYTICS.tagCounts = {};
   ANALYTICS.myCommentsByPost = {};
-  saveStats({ totalHistoricalComments: 0, tagCounts: {}, myCommentsByPost: {} });
+  for (const key of Object.keys(ANALYTICS.postsCatalog)) {
+    ANALYTICS.postsCatalog[key].myComments = 0;
+    ANALYTICS.postsCatalog[key].probabilities = { rawPercent: 0, estimatedRealPercent: 0, oneInX: null };
+  }
+  saveStats();
 }
 
 function loadSavedUsers() {
@@ -524,6 +590,71 @@ async function extractPostCommentCount(page, postUrl = '') {
 }
 
 /**
+ * Extrae metadatos del post (autor, descripción corta) y toma una miniatura
+ * en Base64 JPEG de la imagen/video del post para la Galería del Dashboard.
+ */
+async function extractPostDetailsAndThumbnail(page) {
+  let author = '';
+  let caption = '';
+  let thumbnail = '';
+
+  try {
+    const meta = await page.evaluate(() => {
+      const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content') || '';
+      const metaDesc =
+        document.querySelector('meta[name="description"]')?.getAttribute('content') ||
+        document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
+        '';
+
+      // Intentar obtener autor desde el header del post o desde og:title
+      let foundAuthor = '';
+      const headerLink = document.querySelector('article header a[href^="/"], main header a[href^="/"]');
+      if (headerLink && headerLink.textContent) {
+        foundAuthor = '@' + headerLink.textContent.trim().replace(/^@/, '');
+      } else if (ogTitle) {
+        const m = ogTitle.match(/^([^•(]+?)\s*(?:on Instagram|en Instagram)/i);
+        if (m) foundAuthor = m[1].trim();
+      }
+
+      // Limpiar descripción corta
+      let foundCaption = metaDesc;
+      const quoteMatch = metaDesc.match(/:\s*"([^"]+)"/);
+      if (quoteMatch) {
+        foundCaption = quoteMatch[1];
+      } else if (ogTitle) {
+        foundCaption = ogTitle;
+      }
+
+      return {
+        author: foundAuthor.slice(0, 50),
+        caption: foundCaption.slice(0, 140),
+      };
+    });
+
+    author = meta.author || '';
+    caption = meta.caption || '';
+  } catch {}
+
+  try {
+    // Capturar miniatura de la foto/video principal del post o de la parte central de la página
+    const mediaLocator = page.locator('article img, article video, main img, main video').first();
+    if (await mediaLocator.isVisible({ timeout: 2500 }).catch(() => false)) {
+      const buf = await mediaLocator.screenshot({ type: 'jpeg', quality: 55 });
+      thumbnail = `data:image/jpeg;base64,${buf.toString('base64')}`;
+    } else {
+      const buf = await page.screenshot({
+        type: 'jpeg',
+        quality: 50,
+        clip: { x: 80, y: 70, width: 600, height: 450 },
+      });
+      thumbnail = `data:image/jpeg;base64,${buf.toString('base64')}`;
+    }
+  } catch {}
+
+  return { author, caption, thumbnail };
+}
+
+/**
  * Calcula el porcentaje bruto y la probabilidad real estimada de ganar en un post.
  */
 function calculateWinProbabilities(myCommentsCount, postTotalComments) {
@@ -644,6 +775,24 @@ function crearYEjecutarTareaPost(context, config) {
   const postKey = normalizePostKey(postUrl);
   const initialMyCount = ANALYTICS.myCommentsByPost[postKey] || 0;
 
+  upsertPostInCatalog(postUrl, {
+    myComments: initialMyCount,
+    savedConfig: {
+      baseComment,
+      tagsPerComment,
+      totalComments,
+      antiDuplicate,
+      allowEmojis,
+      minDelay,
+      maxDelay,
+      minIntervalSec,
+      maxIntervalSec,
+      batchSize,
+      minBatchPauseMin,
+      maxBatchPauseMin,
+    },
+  });
+
   const jobId = nextJobId++;
   const job = {
     id: jobId,
@@ -701,8 +850,10 @@ function crearYEjecutarTareaPost(context, config) {
       await dismissCookiesModal(jobPage);
       await dismissPostLoginModals(jobPage);
 
-      // Extraer el total de comentarios que tiene el post actualmente en Instagram
+      // Extraer el total de comentarios y los detalles/foto del post para la Galería del Dashboard
       const detectedTotal = await extractPostCommentCount(jobPage, postUrl);
+      const details = await extractPostDetailsAndThumbnail(jobPage);
+
       if (detectedTotal !== null) {
         job.postTotalComments = Math.max(detectedTotal, job.myTotalInPost);
         job.probabilities = calculateWinProbabilities(job.myTotalInPost, job.postTotalComments);
@@ -711,6 +862,15 @@ function crearYEjecutarTareaPost(context, config) {
           `(Tuyos acumulados: ${job.myTotalInPost} -> Probabilidad actual: ${job.probabilities.estimatedRealPercent}%)`
         );
       }
+
+      upsertPostInCatalog(postUrl, {
+        author: details.author,
+        caption: details.caption,
+        thumbnail: details.thumbnail,
+        myComments: job.myTotalInPost,
+        postTotalComments: job.postTotalComments,
+        probabilities: job.probabilities,
+      });
 
       const unavailableMessage = jobPage.locator(
         'text=/Esta página no está disponible|Sorry, this page isn\'t available|Esta cuenta es privada|This account is private/i'
@@ -770,6 +930,11 @@ function crearYEjecutarTareaPost(context, config) {
         }
 
         job.probabilities = calculateWinProbabilities(job.myTotalInPost, job.postTotalComments);
+        upsertPostInCatalog(postUrl, {
+          myComments: job.myTotalInPost,
+          postTotalComments: job.postTotalComments,
+          probabilities: job.probabilities,
+        });
 
         GLOBAL_LOGS.push({
           jobId,
@@ -848,14 +1013,31 @@ async function minimizeBrowserWindow(page) {
 }
 
 // ============================================================================
-// Servidor Local para la Ventana del Panel de Control
+// Servidor Local para la Ventana del Panel de Control y el Dashboard
 // ============================================================================
-function startControlServer({ onStartBatch, onStopBatch, onFocusJob, onMinimize, onSaveSession, onFocusIg, onShutdown }) {
+function startControlServer({
+  onStartBatch,
+  onStopBatch,
+  onFocusJob,
+  onOpenDashboard,
+  onOpenPanel,
+  onMinimize,
+  onSaveSession,
+  onFocusIg,
+  onShutdown,
+}) {
   return new Promise((resolve, reject) => {
     const server = http.createServer(async (req, res) => {
       try {
         if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?'))) {
           const html = fs.readFileSync(CONFIG.panelHtmlFile, 'utf8');
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(html);
+          return;
+        }
+
+        if (req.method === 'GET' && (req.url === '/dashboard' || req.url.startsWith('/dashboard?'))) {
+          const html = fs.readFileSync(CONFIG.dashboardHtmlFile, 'utf8');
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(html);
           return;
@@ -918,8 +1100,43 @@ function startControlServer({ onStartBatch, onStopBatch, onFocusJob, onMinimize,
               jobs: jobsSummary,
               logs: GLOBAL_LOGS,
               analytics: ANALYTICS,
+              savedUsers: loadSavedUsers(),
             })
           );
+          return;
+        }
+
+        if (req.method === 'POST' && req.url === '/api/delete-post') {
+          let body = '';
+          req.on('data', (chunk) => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const { postKey } = JSON.parse(body || '{}');
+              if (postKey && ANALYTICS.postsCatalog[postKey]) {
+                delete ANALYTICS.postsCatalog[postKey];
+                saveStats();
+              }
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true }));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: false, error: err.message }));
+            }
+          });
+          return;
+        }
+
+        if (req.method === 'POST' && req.url === '/api/open-dashboard') {
+          await onOpenDashboard();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+
+        if (req.method === 'POST' && req.url === '/api/open-panel') {
+          await onOpenPanel();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
           return;
         }
 
@@ -1034,6 +1251,7 @@ function startControlServer({ onStartBatch, onStopBatch, onFocusJob, onMinimize,
   let context = null;
   let igPage = null;
   let panelPage = null;
+  let dashboardPage = null;
   let controlServer = null;
 
   try {
@@ -1093,6 +1311,19 @@ function startControlServer({ onStartBatch, onStopBatch, onFocusJob, onMinimize,
         const job = ACTIVE_JOBS.get(Number(jobId));
         if (job && job.page && !job.page.isClosed()) {
           await job.page.bringToFront().catch(() => {});
+        }
+      },
+      onOpenDashboard: async () => {
+        if (!dashboardPage || dashboardPage.isClosed()) {
+          dashboardPage = await context.newPage();
+          await dashboardPage.goto(`${panelUrl}/dashboard`, { waitUntil: 'domcontentloaded' });
+        } else {
+          await dashboardPage.bringToFront().catch(() => {});
+        }
+      },
+      onOpenPanel: async () => {
+        if (panelPage && !panelPage.isClosed()) {
+          await panelPage.bringToFront().catch(() => {});
         }
       },
       onSaveSession: async () => {

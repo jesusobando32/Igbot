@@ -462,7 +462,12 @@
         <h1>Instagram Multi-Post Recurrent Bot</h1>
         <p>Solo ejecutas "node comentar.js" una vez y desde esta ventana lanzas uno o varios posts a la vez</p>
       </div>
-      <div class="badge" id="sessionBadge">● Verificando sesión...</div>
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <button type="button" class="btn-primary" id="openDashboardBtn" style="padding: 8px 14px; font-size: 0.83rem;">
+          📊 Abrir Dashboard & Galería de Posts
+        </button>
+        <div class="badge" id="sessionBadge">● Verificando sesión...</div>
+      </div>
     </div>
 
     <div class="login-banner">
@@ -668,7 +673,7 @@
       return [defaultMin, defaultMax];
     }
 
-    function createPostEntryRow(initialUrl = '', initialMsg = '') {
+    function createPostEntryRow(initialUrl = '', initialMsg = '', initialTags = 2, initialTotal = 100) {
       rowCounter++;
       const div = document.createElement('div');
       div.className = 'post-entry';
@@ -692,11 +697,11 @@
           </div>
           <div>
             <label>👤 ¿Cuántos etiquetar?</label>
-            <input type="number" class="row-tags" value="2" min="0" max="20" />
+            <input type="number" class="row-tags" value="${initialTags}" min="0" max="20" />
           </div>
           <div>
             <label>🔁 Total Mensajes</label>
-            <input type="number" class="row-total" value="100" min="1" max="500" />
+            <input type="number" class="row-total" value="${initialTotal}" min="1" max="500" />
           </div>
         </div>
         <div class="preview-line"></div>
@@ -931,6 +936,12 @@
       } catch {}
     });
 
+    document.getElementById('openDashboardBtn').addEventListener('click', async () => {
+      await fetch('/api/open-dashboard', { method: 'POST' }).catch(() => {
+        window.open('/dashboard', '_blank');
+      });
+    });
+
     window.addEventListener('DOMContentLoaded', async () => {
       try {
         const res = await fetch('/api/init');
@@ -938,7 +949,32 @@
         if (Array.isArray(data.savedUsers) && data.savedUsers.length > 0) {
           usersListInput.value = data.savedUsers.join('\n');
         }
-        createPostEntryRow(data.initialUrl || '', data.initialComment || '');
+
+        const params = new URLSearchParams(window.location.search);
+        const loadPostKey = params.get('loadPost');
+        let loadedFromGallery = false;
+
+        if (loadPostKey) {
+          const stRes = await fetch('/api/status');
+          const stData = await stRes.json();
+          const savedPost = stData.analytics?.postsCatalog?.[loadPostKey];
+          if (savedPost) {
+            const cfg = savedPost.savedConfig || {};
+            createPostEntryRow(
+              savedPost.postUrl,
+              cfg.baseComment || '',
+              cfg.tagsPerComment ?? 2,
+              cfg.totalComments ?? 100
+            );
+            loadedFromGallery = true;
+            showStatus('info', `📌 Post #${loadPostKey} cargado desde tu Galería con su configuración anterior.`);
+          }
+        }
+
+        if (!loadedFromGallery) {
+          createPostEntryRow(data.initialUrl || '', data.initialComment || '');
+        }
+
         updateBadge(Boolean(data.hasSession));
         statusPollTimer = setInterval(pollStatus, 1000);
         pollStatus();
