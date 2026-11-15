@@ -36,10 +36,14 @@ function loadStats() {
       return {
         totalHistoricalComments: Number(parsed.totalHistoricalComments) || 0,
         tagCounts: parsed.tagCounts && typeof parsed.tagCounts === 'object' ? parsed.tagCounts : {},
+        myCommentsByPost:
+          parsed.myCommentsByPost && typeof parsed.myCommentsByPost === 'object'
+            ? parsed.myCommentsByPost
+            : {},
       };
     }
   } catch {}
-  return { totalHistoricalComments: 0, tagCounts: {} };
+  return { totalHistoricalComments: 0, tagCounts: {}, myCommentsByPost: {} };
 }
 
 function saveStats(stats) {
@@ -53,16 +57,26 @@ const ANALYTICS = {
   ...loadStats(),
 };
 
-function recordCommentAnalytics(taggedUsers = []) {
+function normalizePostKey(url) {
+  const match = String(url || '').match(/instagram\.com\/(?:p|reel|tv)\/([\w-]+)/i);
+  return match ? match[1] : String(url || '').trim();
+}
+
+function recordCommentAnalytics(taggedUsers = [], postUrl = '') {
   ANALYTICS.sessionComments += 1;
   ANALYTICS.totalHistoricalComments += 1;
   for (const rawUser of taggedUsers) {
     const u = rawUser.startsWith('@') ? rawUser.toLowerCase() : `@${rawUser.toLowerCase()}`;
     ANALYTICS.tagCounts[u] = (ANALYTICS.tagCounts[u] || 0) + 1;
   }
+  if (postUrl) {
+    const key = normalizePostKey(postUrl);
+    ANALYTICS.myCommentsByPost[key] = (ANALYTICS.myCommentsByPost[key] || 0) + 1;
+  }
   saveStats({
     totalHistoricalComments: ANALYTICS.totalHistoricalComments,
     tagCounts: ANALYTICS.tagCounts,
+    myCommentsByPost: ANALYTICS.myCommentsByPost,
   });
 }
 
@@ -70,7 +84,8 @@ function resetAnalytics() {
   ANALYTICS.sessionComments = 0;
   ANALYTICS.totalHistoricalComments = 0;
   ANALYTICS.tagCounts = {};
-  saveStats({ totalHistoricalComments: 0, tagCounts: {} });
+  ANALYTICS.myCommentsByPost = {};
+  saveStats({ totalHistoricalComments: 0, tagCounts: {}, myCommentsByPost: {} });
 }
 
 function loadSavedUsers() {
@@ -423,6 +438,123 @@ async function startNonBlockingLogin(igPage, context, onAuthenticated) {
 }
 
 /**
+ * Extrae el número total de comentarios que tiene el post en Instagram
+ * inspeccionando JSON interno de Relay/Polaris, meta tags y nodos del DOM.
+ */
+async function extractPostCommentCount(page, postUrl = '') {
+  try {
+    const shortcode = normalizePostKey(postUrl);
+    const detected = await page.evaluate((code) => {
+      function parseHumanNumber(raw) {
+        if (!raw) return null;
+        const clean = String(raw).trim().toLowerCase();
+        // Soporte para "1,2 mil", "1.5k", "1,234", "1.234"
+        if (clean.includes('mil') || clean.endsWith('k')) {
+          const num = parseFloat(clean.replace(/[^\d.,]/g, '').replace(',', '.'));
+          return Number.isNaN(num) ? null : Math.round(num * 1000);
+        }
+        const digitsOnly = clean.replace(/[^\d]/g, '');
+        return digitsOnly ? parseInt(digitsOnly, 10) : null;
+      }
+
+      // 1. Buscar en scripts JSON internos de Instagram (Relay / Polaris store)
+      const scripts = Array.from(document.querySelectorAll('script[type="application/json"]'));
+      for (const s of scripts) {
+        const txt = s.textContent || '';
+        if (code && !txt.includes(code)) continue;
+
+        const match1 = txt.match(/"comment_count"\s*:\s*(\d+)/);
+        if (match1) return parseInt(match1[1], 10);
+
+        const match2 = txt.match(/"edge_media_to_parent_comment"\s*:\s*\{\s*"count"\s*:\s*(\d+)/);
+        if (match2) return parseInt(match2[1], 10);
+
+        const match3 = txt.match(/"edge_media_to_comment"\s*:\s*\{\s*"count"\s*:\s*(\d+)/);
+        if (match3) return parseInt(match3[1], 10);
+      }
+
+      // Segunda pasada en cualquier script application/json aunque no tenga el shortcode literal
+      for (const s of scripts) {
+        const txt = s.textContent || '';
+        const match1 = txt.match(/"comment_count"\s*:\s*(\d+)/);
+        if (match1) return parseInt(match1[1], 10);
+      }
+
+      // 2. Buscar en meta description / og:description ("123 likes, 45 comments" / "45 comentarios")
+      const metaDesc =
+        document.querySelector('meta[name="description"]')?.getAttribute('content') ||
+        document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
+        '';
+      const metaMatch = metaDesc.match(/([\d.,]+\s*(?:mil|k)?)\s+(?:comentarios|comments)/i);
+      if (metaMatch) {
+        const parsed = parseHumanNumber(metaMatch[1]);
+        if (parsed !== null) return parsed;
+      }
+
+      // 3. Buscar texto visible "Ver los X comentarios" / "View all X comments"
+      const bodyText = document.body ? document.body.innerText : '';
+      const viewAllMatch = bodyText.match(
+        /(?:Ver los|Ver todos los|View all)\s+([\d.,]+\s*(?:mil|k)?)\s+(?:comentarios|comments)/i
+      );
+      if (viewAllMatch) {
+        const parsed = parseHumanNumber(viewAllMatch[1]);
+        if (parsed !== null) return parsed;
+      }
+
+      // 4. Buscar contador junto al ícono SVG de Comentario (común en Reels y vista nueva)
+      const commentSvg = document.querySelector(
+        'svg[aria-label*="Comentario" i], svg[aria-label*="Comment" i]'
+      );
+      if (commentSvg) {
+        const btnContainer = commentSvg.closest('div[role="button"], button, span');
+        if (btnContainer && btnContainer.parentElement) {
+          const textNear = btnContainer.parentElement.innerText || '';
+          const parsed = parseHumanNumber(textNear);
+          if (parsed !== null && parsed > 0) return parsed;
+        }
+      }
+
+      return null;
+    }, shortcode);
+
+    return typeof detected === 'number' && !Number.isNaN(detected) ? detected : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Calcula el porcentaje bruto y la probabilidad real estimada de ganar en un post.
+ */
+function calculateWinProbabilities(myCommentsCount, postTotalComments) {
+  const myCount = Math.max(0, Number(myCommentsCount) || 0);
+  const totalPost = Math.max(myCount, Number(postTotalComments) || 0);
+
+  if (totalPost <= 0 || myCount <= 0) {
+    return {
+      rawPercent: 0,
+      estimatedRealPercent: 0,
+      oneInX: null,
+    };
+  }
+
+  const rawPercent = (myCount / totalPost) * 100;
+  // Estimación real: ~25% de los comentarios de otros usuarios suelen ser descartados
+  // por las plataformas de sorteos (respuestas anidadas, sin menciones suficientes o duplicados),
+  // mientras que tus comentarios llevan validación anti-duplicado.
+  const otherComments = Math.max(0, totalPost - myCount);
+  const validOtherComments = otherComments * 0.75;
+  const estimatedRealPercent = (myCount / (myCount + validOtherComments)) * 100;
+  const oneInX = Number((100 / estimatedRealPercent).toFixed(1));
+
+  return {
+    rawPercent: Number(rawPercent.toFixed(2)),
+    estimatedRealPercent: Number(estimatedRealPercent.toFixed(2)),
+    oneInX,
+  };
+}
+
+/**
  * Publica un único comentario dentro de la pestaña dedicada del post
  * EN SEGUNDO PLANO (sin llamar a bringToFront para no robar el foco de Windows).
  */
@@ -509,10 +641,14 @@ function crearYEjecutarTareaPost(context, config) {
     throw new Error('La URL no es válida. Debe ser un enlace de post o reel (ej. https://www.instagram.com/p/XXXX/).');
   }
 
+  const postKey = normalizePostKey(postUrl);
+  const initialMyCount = ANALYTICS.myCommentsByPost[postKey] || 0;
+
   const jobId = nextJobId++;
   const job = {
     id: jobId,
     postUrl,
+    postKey,
     baseComment,
     tagsPerComment,
     usersCount: users.length,
@@ -520,6 +656,9 @@ function crearYEjecutarTareaPost(context, config) {
     cancelRequested: false,
     completed: 0,
     total: totalComments,
+    postTotalComments: null,
+    myTotalInPost: initialMyCount,
+    probabilities: { rawPercent: 0, estimatedRealPercent: 0, oneInX: null },
     phaseMessage: 'Abriendo pestaña dedicada para este post...',
     error: null,
     page: null,
@@ -535,12 +674,43 @@ function crearYEjecutarTareaPost(context, config) {
       const jobPage = await context.newPage();
       job.page = jobPage;
 
+      // Escuchar respuestas de red de Instagram por si viene comment_count en JSON/GraphQL
+      jobPage.on('response', async (response) => {
+        try {
+          const url = response.url();
+          if (url.includes('graphql') || url.includes('/api/v1/media/') || url.includes('/comments/')) {
+            const text = await response.text();
+            const m =
+              text.match(/"comment_count"\s*:\s*(\d+)/) ||
+              text.match(/"edge_media_to_parent_comment"\s*:\s*\{\s*"count"\s*:\s*(\d+)/);
+            if (m) {
+              const count = parseInt(m[1], 10);
+              if (!Number.isNaN(count) && count > 0) {
+                job.postTotalComments = Math.max(count, job.myTotalInPost);
+                job.probabilities = calculateWinProbabilities(job.myTotalInPost, job.postTotalComments);
+              }
+            }
+          }
+        } catch {}
+      });
+
       console.log(`\n🌐 [Post #${jobId}] Abriendo pestaña y navegando a: ${postUrl}`);
       await jobPage.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await jobPage.waitForTimeout(2200);
+      await jobPage.waitForTimeout(2500);
 
       await dismissCookiesModal(jobPage);
       await dismissPostLoginModals(jobPage);
+
+      // Extraer el total de comentarios que tiene el post actualmente en Instagram
+      const detectedTotal = await extractPostCommentCount(jobPage, postUrl);
+      if (detectedTotal !== null) {
+        job.postTotalComments = Math.max(detectedTotal, job.myTotalInPost);
+        job.probabilities = calculateWinProbabilities(job.myTotalInPost, job.postTotalComments);
+        console.log(
+          `📊 [Post #${jobId}] Comentarios totales detectados en el post: ${job.postTotalComments} ` +
+          `(Tuyos acumulados: ${job.myTotalInPost} -> Probabilidad actual: ${job.probabilities.estimatedRealPercent}%)`
+        );
+      }
 
       const unavailableMessage = jobPage.locator(
         'text=/Esta página no está disponible|Sorry, this page isn\'t available|Esta cuenta es privada|This account is private/i'
@@ -587,7 +757,20 @@ function crearYEjecutarTareaPost(context, config) {
         });
 
         job.completed = i;
-        recordCommentAnalytics(selectedUsers);
+        recordCommentAnalytics(selectedUsers, postUrl);
+        job.myTotalInPost = ANALYTICS.myCommentsByPost[postKey] || job.completed;
+
+        if (job.postTotalComments !== null) {
+          job.postTotalComments += 1;
+        } else {
+          const refreshedCount = await extractPostCommentCount(jobPage, postUrl);
+          job.postTotalComments = refreshedCount !== null
+            ? Math.max(refreshedCount, job.myTotalInPost)
+            : job.myTotalInPost;
+        }
+
+        job.probabilities = calculateWinProbabilities(job.myTotalInPost, job.postTotalComments);
+
         GLOBAL_LOGS.push({
           jobId,
           index: i,
@@ -722,6 +905,9 @@ function startControlServer({ onStartBatch, onStopBatch, onFocusJob, onMinimize,
               running: j.running,
               completed: j.completed,
               total: j.total,
+              postTotalComments: j.postTotalComments,
+              myTotalInPost: j.myTotalInPost,
+              probabilities: j.probabilities,
               phaseMessage: j.phaseMessage,
               error: j.error,
             }));

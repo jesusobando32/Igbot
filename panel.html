@@ -486,18 +486,24 @@
           🔄 Reiniciar Contador
         </button>
       </div>
-      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px;">
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px;">
         <div style="background: #181b23; border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
-          <div style="font-size: 0.74rem; color: var(--muted);">Comentarios (Esta Sesión)</div>
-          <div id="statSessionCount" style="font-size: 1.3rem; font-weight: 700; color: #34d399; margin-top: 2px;">0</div>
+          <div style="font-size: 0.73rem; color: var(--muted);">Tus Msjs (Sesión / Histórico)</div>
+          <div style="font-size: 1.2rem; font-weight: 700; color: #34d399; margin-top: 3px;">
+            <span id="statSessionCount">0</span> <span style="color: var(--muted); font-size: 0.9rem;">/ <span id="statTotalCount">0</span></span>
+          </div>
         </div>
         <div style="background: #181b23; border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
-          <div style="font-size: 0.74rem; color: var(--muted);">Total Histórico Escritos</div>
-          <div id="statTotalCount" style="font-size: 1.3rem; font-weight: 700; color: #f8fafc; margin-top: 2px;">0</div>
+          <div style="font-size: 0.73rem; color: var(--muted);">💬 Total Comentarios del Post</div>
+          <div id="statPostTotal" style="font-size: 1.2rem; font-weight: 700; color: #38bdf8; margin-top: 3px;">—</div>
         </div>
         <div style="background: #181b23; border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
-          <div style="font-size: 0.74rem; color: var(--muted);">🏆 Más Etiquetado</div>
-          <div id="statTopUser" style="font-size: 0.95rem; font-weight: 700; color: #fbbf24; margin-top: 5px;">—</div>
+          <div style="font-size: 0.73rem; color: var(--muted);">🎯 Probabilidad de Ganar</div>
+          <div id="statWinProb" style="font-size: 1.05rem; font-weight: 700; color: #10b981; margin-top: 4px;">—</div>
+        </div>
+        <div style="background: #181b23; border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
+          <div style="font-size: 0.73rem; color: var(--muted);">🏆 Más Etiquetado</div>
+          <div id="statTopUser" style="font-size: 0.92rem; font-weight: 700; color: #fbbf24; margin-top: 5px;">—</div>
         </div>
       </div>
       <div id="tagRankingList" style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.78rem; color: var(--muted);">
@@ -804,6 +810,15 @@
         .map((job) => {
           const pct = job.total > 0 ? Math.round((job.completed / job.total) * 100) : 0;
           const msgDesc = job.baseComment ? `"${job.baseComment.replace(/</g, '&lt;')}"` : '(Solo etiquetados)';
+          const postTotalTxt =
+            job.postTotalComments !== null && job.postTotalComments !== undefined
+              ? job.postTotalComments.toLocaleString()
+              : 'Detectando...';
+          const myPostCount = job.myTotalInPost || job.completed || 0;
+          const rawPct = job.probabilities ? job.probabilities.rawPercent : 0;
+          const realPct = job.probabilities ? job.probabilities.estimatedRealPercent : 0;
+          const oneInX = job.probabilities && job.probabilities.oneInX ? ` (1 en ${job.probabilities.oneInX})` : '';
+
           return `
             <div class="task-card ${job.running ? 'running' : ''}">
               <div class="task-top">
@@ -822,7 +837,13 @@
                 </div>
               </div>
               <div class="task-meta">
-                💬 Mensaje: <strong>${msgDesc}</strong> &nbsp;|&nbsp; 👤 Etiquetados por comentario: <strong>${job.tagsPerComment}</strong> (de ${job.usersCount} en lista)
+                💬 Mensaje: <strong>${msgDesc}</strong> &nbsp;|&nbsp; 👤 Etiquetados: <strong>${job.tagsPerComment}</strong>
+              </div>
+              <div class="task-meta" style="color: #38bdf8; background: #181b23; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);">
+                📊 <strong>Comentarios Totales del Post en IG:</strong> ${postTotalTxt} &nbsp;|&nbsp;
+                🎟️ <strong>Tus Boletos aquí:</strong> ${myPostCount} &nbsp;|&nbsp;
+                📈 <strong>Tu Porcentaje:</strong> ${rawPct}% &nbsp;|&nbsp;
+                🎯 <strong>Probabilidad Real de Ganar:</strong> <span style="color: #34d399; font-weight: 700;">${realPct}%${oneInX}</span>
               </div>
               <div class="progress-bar-bg">
                 <div class="progress-bar-fill" style="width: ${pct}%;"></div>
@@ -836,10 +857,26 @@
         .join('');
     }
 
-    function renderAnalytics(analytics) {
+    function renderAnalytics(analytics, jobs = []) {
       if (!analytics) return;
       document.getElementById('statSessionCount').textContent = analytics.sessionComments || 0;
       document.getElementById('statTotalCount').textContent = analytics.totalHistoricalComments || 0;
+
+      // Mostrar en el contador global los comentarios del post activo y la probabilidad de ganar
+      const statPostTotalEl = document.getElementById('statPostTotal');
+      const statWinProbEl = document.getElementById('statWinProb');
+      const activeJob = jobs.find((j) => j.running) || jobs[0];
+
+      if (activeJob && activeJob.postTotalComments) {
+        const myInPost = activeJob.myTotalInPost || activeJob.completed || 0;
+        const rawPct = activeJob.probabilities ? activeJob.probabilities.rawPercent : 0;
+        const realPct = activeJob.probabilities ? activeJob.probabilities.estimatedRealPercent : 0;
+        statPostTotalEl.innerHTML = `${activeJob.postTotalComments.toLocaleString()} <span style="font-size: 0.78rem; color: var(--muted);">(${myInPost} tuyos = ${rawPct}%)</span>`;
+        statWinProbEl.innerHTML = `${realPct}% <span style="font-size: 0.76rem; color: var(--muted);">(${rawPct}% bruto)</span>`;
+      } else {
+        statPostTotalEl.textContent = '—';
+        statWinProbEl.textContent = '—';
+      }
 
       const tagCounts = analytics.tagCounts || {};
       const entries = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
@@ -872,7 +909,7 @@
         const res = await fetch('/api/status');
         const data = await res.json();
         renderTasks(data.jobs || []);
-        renderAnalytics(data.analytics);
+        renderAnalytics(data.analytics, data.jobs || []);
 
         if (Array.isArray(data.logs)) {
           while (renderedLogCount < data.logs.length) {
