@@ -1,0 +1,23 @@
+{
+  "name": "ig-playwright-automation",
+  "version": "1.0.0",
+  "description": "Automatización de inicio de sesión y publicación de comentarios en Instagram con Playwright",
+  "main": "comentar.js",
+  "scripts": {
+    "comentar": "node comentar.js",
+    "install:browsers": "npx playwright install chromium"
+  },
+  "keywords": [
+    "instagram",
+    "playwright",
+    "automation",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "playwright": "^1.58.2"
+  }
+}

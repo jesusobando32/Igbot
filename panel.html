@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Instagram Multi-Post Bot — Panel de Control</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #181b23;
+      --border: #2a2f3d;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #e1306c;
+      --accent-hover: #c13584;
+      --success: #10b981;
+      --error: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 24px 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 26px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 18px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .title-group h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .title-group p {
+      color: var(--muted);
+      font-size: 0.86rem;
+      margin-top: 4px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.12);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .badge.pending {
+      background: rgba(245, 158, 11, 0.12);
+      color: var(--warning);
+      border-color: rgba(245, 158, 11, 0.35);
+    }
+
+    .login-banner {
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: 12px;
+      padding: 12px 15px;
+      margin-bottom: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .login-banner p {
+      font-size: 0.84rem;
+      color: #fde68a;
+      line-height: 1.4;
+      flex: 1;
+      min-width: 240px;
+    }
+
+    .login-banner-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.86rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #e2e8f0;
+    }
+
+    .hint {
+      font-size: 0.76rem;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    textarea {
+      width: 100%;
+      background: #0f1117;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus,
+    textarea:focus {
+      border-color: var(--accent);
+    }
+
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    /* Bloques de Posts a lanzar */
+    .posts-builder {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .post-entry {
+      background: #12151c;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .post-entry-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .post-entry-title {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .post-entry-grid {
+      display: grid;
+      grid-template-columns: 1.5fr 1.2fr 0.55fr 0.55fr;
+      gap: 10px;
+      align-items: start;
+    }
+
+    @media (max-width: 760px) {
+      .post-entry-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .preview-line {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: #38bdf8;
+    }
+
+    .settings-section-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 8px;
+      margin-top: 16px;
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      background: #12151c;
+      border: 1px solid var(--border);
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 680px) {
+      .settings-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .settings-grid label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 10px;
+      padding: 11px 16px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      flex: 1;
+      background: linear-gradient(90deg, #e1306c, #c13584);
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: #232734;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      font-size: 0.82rem;
+    }
+
+    .btn-secondary:hover {
+      background: #2d3242;
+    }
+
+    .btn-success {
+      background: rgba(16, 185, 129, 0.18);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      padding: 8px 12px;
+      font-size: 0.82rem;
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.14);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      padding: 8px 12px;
+      font-size: 0.82rem;
+    }
+
+    .status-box {
+      margin-top: 14px;
+      padding: 12px 15px;
+      border-radius: 10px;
+      font-size: 0.86rem;
+      display: none;
+      line-height: 1.4;
+    }
+
+    .status-box.info {
+      display: block;
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      color: #fbbf24;
+    }
+
+    .status-box.success {
+      display: block;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #34d399;
+    }
+
+    .status-box.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #f87171;
+    }
+
+    .tasks-section {
+      margin-top: 22px;
+      border-top: 1px solid var(--border);
+      padding-top: 16px;
+    }
+
+    .tasks-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .tasks-header h3 {
+      font-size: 0.88rem;
+      color: #e2e8f0;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .task-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .task-card {
+      background: #12151c;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .task-card.running {
+      border-color: rgba(225, 48, 108, 0.5);
+    }
+
+    .task-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .task-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .task-url {
+      color: #60a5fa;
+      font-size: 0.8rem;
+      text-decoration: none;
+      margin-left: 6px;
+    }
+
+    .task-meta {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 8px;
+      background: #232734;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #f09433, #e1306c, #c13584);
+      transition: width 0.3s ease;
+    }
+
+    .task-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      color: var(--muted);
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .history {
+      margin-top: 20px;
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+    }
+
+    .history h3 {
+      font-size: 0.84rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 10px;
+    }
+
+    .history-list {
+      list-style: none;
+      max-height: 170px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .history-item {
+      font-size: 0.8rem;
+      padding: 7px 11px;
+      background: #12151c;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="title-group">
+        <h1>Instagram Multi-Post Recurrent Bot</h1>
+        <p>Solo ejecutas "node comentar.js" una vez y desde esta ventana lanzas uno o varios posts a la vez</p>
+      </div>
+      <div class="badge" id="sessionBadge">● Verificando sesión...</div>
+    </div>
+
+    <div class="login-banner">
+      <p>
+        💡 <strong>¿Necesitas completar login, 2FA o verificación manual?</strong><br />
+        Hazlo en la pestaña de Instagram y luego pulsa <strong>"Guardar Sesión"</strong>.
+      </p>
+      <div class="login-banner-actions">
+        <button type="button" class="btn-secondary" id="goIgTopBtn">👁️ Ir a Instagram</button>
+        <button type="button" class="btn-success" id="saveSessionBtn">💾 Guardar Sesión</button>
+      </div>
+    </div>
+
+    <!-- Lista de Usuarios Guardados -->
+    <div class="form-group">
+      <label for="usersList">
+        <span>👥 Tus Usuarios de Instagram Guardados (<span id="userCountBadge">7 usuarios</span>)</span>
+        <button type="button" class="btn-success" id="saveUsersBtn">
+          💾 Guardar Cambios en Lista de Usuarios
+        </button>
+      </label>
+      <textarea
+        id="usersList"
+        placeholder="Uno por línea o separados por espacio..."
+      ></textarea>
+    </div>
+
+    <!-- Constructor de 1 o varios Posts para lanzar de una vez -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <span class="settings-section-title" style="margin: 0;">📌 Configura el Post (o añade varios para lanzarlos de una vez)</span>
+      <button type="button" class="btn-secondary" id="addPostRowBtn">
+        ➕ Añadir otro Post al formulario
+      </button>
+    </div>
+
+    <div class="posts-builder" id="postsBuilder"></div>
+
+    <!-- Tiempos Anti-Spam Globales -->
+    <div class="settings-section-title">🛡️ Tiempos Anti-Spam (Intercalado Automático entre Posts)</div>
+    <div class="settings-grid">
+      <div>
+        <label for="typingDelay">⌨️ Delay Tipeo/Letra (ms)</label>
+        <input type="text" id="typingDelay" value="65-135" />
+      </div>
+      <div>
+        <label for="intervalSec">⏱️ Espera entre Msjs (seg)</label>
+        <input type="text" id="intervalSec" value="38-75" />
+      </div>
+      <div>
+        <label for="batchSize">🛡️ Pausa cada X Msjs</label>
+        <input type="number" id="batchSize" value="10" min="0" max="100" />
+      </div>
+      <div>
+        <label for="batchPauseMin">☕ Duración Pausa (min)</label>
+        <input type="text" id="batchPauseMin" value="4-7" />
+      </div>
+    </div>
+
+    <!-- Botones de Acción -->
+    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #34d399; margin-bottom: 14px; cursor: pointer;">
+      <input type="checkbox" id="autoMinimize" checked />
+      🗕 Minimizar navegador automáticamente al iniciar (sigue comentando en segundo plano sin interrumpir tu PC)
+    </label>
+
+    <div class="actions">
+      <button type="button" class="btn-primary" id="submitBtn">
+        🚀 Iniciar Post(s) Configurados Ahora
+      </button>
+      <button type="button" class="btn-secondary" id="minimizeBtn" title="Minimizar navegador a la barra de tareas">
+        🗕 Minimizar Ventana
+      </button>
+      <button type="button" class="btn-danger" id="closeBtn">
+        🛑 Cerrar Todo
+      </button>
+    </div>
+
+    <div id="statusBox" class="status-box"></div>
+
+    <!-- Lista de Posts Activos en Paralelo -->
+    <div class="tasks-section">
+      <div class="tasks-header">
+        <h3>📋 Posts Ejecutándose en Paralelo</h3>
+        <button type="button" class="btn-danger" id="stopAllBtn" style="display: none;">
+          ⏹️ Detener Todos los Posts
+        </button>
+      </div>
+      <div class="task-list" id="taskList">
+        <div style="color: var(--muted); font-size: 0.84rem;" id="emptyTasks">
+          No hay posts activos todavía.
+        </div>
+      </div>
+    </div>
+
+    <!-- Registro global en vivo -->
+    <div class="history">
+      <h3>Últimos comentarios publicados</h3>
+      <ul class="history-list" id="historyList">
+        <li class="history-item" id="emptyHistory" style="color: var(--muted);">
+          Aún no se han enviado comentarios en esta sesión.
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    const usersListInput = document.getElementById('usersList');
+    const userCountBadge = document.getElementById('userCountBadge');
+    const saveUsersBtn = document.getElementById('saveUsersBtn');
+    const postsBuilder = document.getElementById('postsBuilder');
+    const addPostRowBtn = document.getElementById('addPostRowBtn');
+
+    const typingDelayInput = document.getElementById('typingDelay');
+    const intervalSecInput = document.getElementById('intervalSec');
+    const batchSizeInput = document.getElementById('batchSize');
+    const batchPauseMinInput = document.getElementById('batchPauseMin');
+
+    const submitBtn = document.getElementById('submitBtn');
+    const stopAllBtn = document.getElementById('stopAllBtn');
+    const goIgTopBtn = document.getElementById('goIgTopBtn');
+    const saveSessionBtn = document.getElementById('saveSessionBtn');
+    const closeBtn = document.getElementById('closeBtn');
+    const statusBox = document.getElementById('statusBox');
+    const sessionBadge = document.getElementById('sessionBadge');
+    const taskList = document.getElementById('taskList');
+    const historyList = document.getElementById('historyList');
+    const emptyHistory = document.getElementById('emptyHistory');
+
+    let statusPollTimer = null;
+    let renderedLogCount = 0;
+    let rowCounter = 0;
+
+    function parseUsers(rawText) {
+      if (!rawText) return [];
+      const tokens = rawText
+        .split(/[\n,;|\s]+/)
+        .map((u) => u.trim())
+        .filter(Boolean)
+        .map((u) => (u.startsWith('@') ? u : '@' + u));
+      return [...new Set(tokens)];
+    }
+
+    function pickRandomUnique(arr, count) {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy.slice(0, count);
+    }
+
+    function parseRange(str, defaultMin, defaultMax) {
+      const parts = String(str || '')
+        .split('-')
+        .map((n) => parseFloat(n.trim()))
+        .filter((n) => !Number.isNaN(n));
+      if (parts.length === 1) return [parts[0], parts[0]];
+      if (parts.length >= 2) return [Math.min(parts[0], parts[1]), Math.max(parts[0], parts[1])];
+      return [defaultMin, defaultMax];
+    }
+
+    function createPostEntryRow(initialUrl = '', initialMsg = '') {
+      rowCounter++;
+      const div = document.createElement('div');
+      div.className = 'post-entry';
+      div.innerHTML = `
+        <div class="post-entry-header">
+          <span class="post-entry-title">📌 Post a Comentar</span>
+          ${
+            postsBuilder.children.length > 0
+              ? `<button type="button" class="btn-danger remove-row-btn" style="padding: 4px 10px; font-size: 0.75rem;">✖ Quitar</button>`
+              : ''
+          }
+        </div>
+        <div class="post-entry-grid">
+          <div>
+            <label>🔗 Link del Post / Reel</label>
+            <input type="text" class="row-url" placeholder="https://www.instagram.com/p/XXXX/" value="${initialUrl}" />
+          </div>
+          <div>
+            <label>💬 Mensaje (Vacío = solo @usuarios)</label>
+            <input type="text" class="row-msg" placeholder="Opcional: escribe mensaje o déjalo vacío" value="${initialMsg}" />
+          </div>
+          <div>
+            <label>👤 ¿Cuántos etiquetar?</label>
+            <input type="number" class="row-tags" value="2" min="0" max="20" />
+          </div>
+          <div>
+            <label>🔁 Total Mensajes</label>
+            <input type="number" class="row-total" value="100" min="1" max="500" />
+          </div>
+        </div>
+        <div class="preview-line"></div>
+      `;
+
+      const removeBtn = div.querySelector('.remove-row-btn');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', () => {
+          div.remove();
+          updateAllPreviews();
+        });
+      }
+
+      div.querySelectorAll('input').forEach((inp) => {
+        inp.addEventListener('input', updateAllPreviews);
+      });
+
+      postsBuilder.appendChild(div);
+      updateAllPreviews();
+    }
+
+    function updateAllPreviews() {
+      const users = parseUsers(usersListInput.value);
+      userCountBadge.textContent = `${users.length} usuario(s)`;
+
+      document.querySelectorAll('.post-entry').forEach((row) => {
+        const msg = row.querySelector('.row-msg').value.trim();
+        const tagsCount = Math.max(0, parseInt(row.querySelector('.row-tags').value, 10) || 0);
+        const previewEl = row.querySelector('.preview-line');
+
+        const chosen = tagsCount > 0 ? pickRandomUnique(users, Math.min(tagsCount, users.length)) : [];
+        const parts = [];
+        if (msg) parts.push(msg);
+        if (chosen.length > 0) parts.push(chosen.join(' '));
+
+        const example = parts.join(' ');
+        if (!example) {
+          previewEl.textContent = '⚠️ Vacío: elige al menos 1 etiquetado o escribe un mensaje';
+        } else {
+          previewEl.textContent = `👁️ Ejemplo aleatorio: "${example}"`;
+        }
+      });
+    }
+
+    usersListInput.addEventListener('input', updateAllPreviews);
+    addPostRowBtn.addEventListener('click', () => createPostEntryRow());
+
+    function showStatus(type, message) {
+      statusBox.className = 'status-box ' + type;
+      statusBox.textContent = message;
+    }
+
+    function updateBadge(hasSession) {
+      if (hasSession) {
+        sessionBadge.className = 'badge';
+        sessionBadge.textContent = '● Sesión Guardada (sesion_ig.json)';
+      } else {
+        sessionBadge.className = 'badge pending';
+        sessionBadge.textContent = '● Completa el login en la pestaña de Instagram';
+      }
+    }
+
+    function appendLogItem(item) {
+      if (emptyHistory) emptyHistory.remove();
+      const li = document.createElement('li');
+      li.className = 'history-item';
+      li.innerHTML = `
+        <span>✅ <strong>[Post #${item.jobId}] #${item.index} (${item.time})</strong> — "${item.comment.replace(/</g, '&lt;')}"</span>
+        <span style="color: var(--muted);">${item.postShort}</span>
+      `;
+      historyList.prepend(li);
+    }
+
+    window.focusTaskTab = async (jobId) => {
+      await fetch('/api/focus-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId }),
+      });
+    };
+
+    window.stopSingleTask = async (jobId) => {
+      await fetch('/api/stop-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId }),
+      });
+    };
+
+    function renderTasks(jobs) {
+      if (!jobs || jobs.length === 0) {
+        stopAllBtn.style.display = 'none';
+        return;
+      }
+
+      const anyRunning = jobs.some((j) => j.running);
+      stopAllBtn.style.display = anyRunning ? 'inline-flex' : 'none';
+
+      taskList.innerHTML = jobs
+        .map((job) => {
+          const pct = job.total > 0 ? Math.round((job.completed / job.total) * 100) : 0;
+          const msgDesc = job.baseComment ? `"${job.baseComment.replace(/</g, '&lt;')}"` : '(Solo etiquetados)';
+          return `
+            <div class="task-card ${job.running ? 'running' : ''}">
+              <div class="task-top">
+                <div>
+                  <span class="task-title">${job.running ? '🔄' : job.error ? '❌' : '✅'} Post #${job.id}</span>
+                  <a href="${job.postUrl}" target="_blank" class="task-url">${job.postUrl}</a>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <strong style="font-size: 0.85rem;">${job.completed} / ${job.total} (${pct}%)</strong>
+                  <button type="button" class="btn-secondary" onclick="focusTaskTab(${job.id})">👁️ Ver Pestaña</button>
+                  ${
+                    job.running
+                      ? `<button type="button" class="btn-danger" onclick="stopSingleTask(${job.id})">⏹️ Detener</button>`
+                      : ''
+                  }
+                </div>
+              </div>
+              <div class="task-meta">
+                💬 Mensaje: <strong>${msgDesc}</strong> &nbsp;|&nbsp; 👤 Etiquetados por comentario: <strong>${job.tagsPerComment}</strong> (de ${job.usersCount} en lista)
+              </div>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill" style="width: ${pct}%;"></div>
+              </div>
+              <div class="task-bottom">
+                <span>${job.phaseMessage || ''}</span>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+    }
+
+    async function pollStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        renderTasks(data.jobs || []);
+
+        if (Array.isArray(data.logs)) {
+          while (renderedLogCount < data.logs.length) {
+            appendLogItem(data.logs[renderedLogCount]);
+            renderedLogCount++;
+          }
+        }
+      } catch {}
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        const res = await fetch('/api/init');
+        const data = await res.json();
+        if (Array.isArray(data.savedUsers) && data.savedUsers.length > 0) {
+          usersListInput.value = data.savedUsers.join('\n');
+        }
+        createPostEntryRow(data.initialUrl || '', data.initialComment || '');
+        updateBadge(Boolean(data.hasSession));
+        statusPollTimer = setInterval(pollStatus, 1000);
+        pollStatus();
+      } catch {}
+    });
+
+    // Guardar cambios en la lista de usuarios favoritos
+    saveUsersBtn.addEventListener('click', async () => {
+      const users = parseUsers(usersListInput.value);
+      try {
+        const res = await fetch('/api/save-users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ users }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          usersListInput.value = users.join('\n');
+          updateAllPreviews();
+          showStatus('success', `💾 ¡Se guardaron ${users.length} usuarios en usuarios_guardados.json!`);
+        }
+      } catch (err) {
+        showStatus('error', '⚠️ No se pudo guardar la lista: ' + err.message);
+      }
+    });
+
+    saveSessionBtn.addEventListener('click', async () => {
+      try {
+        saveSessionBtn.disabled = true;
+        const res = await fetch('/api/save-session', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          updateBadge(true);
+          showStatus('success', '💾 ¡Sesión guardada exitosamente en sesion_ig.json!');
+        } else {
+          showStatus('error', '⚠️ No se pudo guardar la sesión: ' + (data.error || ''));
+        }
+      } catch (err) {
+        showStatus('error', '⚠️ Error al guardar sesión: ' + err.message);
+      } finally {
+        saveSessionBtn.disabled = false;
+      }
+    });
+
+    submitBtn.addEventListener('click', async () => {
+      const users = parseUsers(usersListInput.value);
+      const [minDelay, maxDelay] = parseRange(typingDelayInput.value, 65, 135);
+      const [minIntervalSec, maxIntervalSec] = parseRange(intervalSecInput.value, 38, 75);
+      const batchSize = Math.max(0, parseInt(batchSizeInput.value, 10) || 0);
+      const [minBatchPauseMin, maxBatchPauseMin] = parseRange(batchPauseMinInput.value, 4, 7);
+
+      const rows = Array.from(document.querySelectorAll('.post-entry'));
+      const payloads = [];
+
+      for (const row of rows) {
+        const postUrl = row.querySelector('.row-url').value.trim();
+        const baseComment = row.querySelector('.row-msg').value.trim();
+        const tagsPerComment = Math.max(0, parseInt(row.querySelector('.row-tags').value, 10) || 0);
+        const totalComments = Math.max(1, parseInt(row.querySelector('.row-total').value, 10) || 1);
+
+        if (!postUrl) {
+          showStatus('error', '⚠️ Por favor pega el link del post o reel en todas las filas agregadas.');
+          row.querySelector('.row-url').focus();
+          return;
+        }
+
+        if (tagsPerComment > 0 && users.length < tagsPerComment) {
+          showStatus(
+            'error',
+            `⚠️ Pediste etiquetar a ${tagsPerComment} usuario(s), pero solo hay ${users.length} en tu lista.`
+          );
+          return;
+        }
+
+        if (tagsPerComment === 0 && !baseComment) {
+          showStatus(
+            'error',
+            '⚠️ Si eliges etiquetar 0 usuarios y dejas el mensaje en blanco, el comentario estará vacío.'
+          );
+          return;
+        }
+
+        payloads.push({
+          postUrl,
+          users,
+          baseComment,
+          tagsPerComment,
+          totalComments,
+          minDelay,
+          maxDelay,
+          minIntervalSec,
+          maxIntervalSec,
+          batchSize,
+          minBatchPauseMin,
+          maxBatchPauseMin,
+        });
+      }
+
+      try {
+        const startedIds = [];
+        for (const item of payloads) {
+          const res = await fetch('/api/start-batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(item),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.error || 'No se pudo iniciar uno de los posts.');
+          }
+          startedIds.push('#' + data.jobId);
+        }
+
+        // Dejar 1 fila limpia lista por si quiere agregar otro más adelante
+        postsBuilder.innerHTML = '';
+        createPostEntryRow();
+
+        showStatus(
+          'success',
+          `🚀 ¡Iniciado(s) Post(s) ${startedIds.join(', ')} en segundo plano! Puedes minimizar la ventana y usar tu PC con normalidad.`
+        );
+        pollStatus();
+
+        const autoMinimizeCheckbox = document.getElementById('autoMinimize');
+        if (autoMinimizeCheckbox && autoMinimizeCheckbox.checked) {
+          setTimeout(() => {
+            fetch('/api/minimize', { method: 'POST' }).catch(() => {});
+          }, 1200);
+        }
+      } catch (err) {
+        showStatus('error', '❌ Error: ' + err.message);
+      }
+    });
+
+    const minimizeBtn = document.getElementById('minimizeBtn');
+    if (minimizeBtn) {
+      minimizeBtn.addEventListener('click', async () => {
+        await fetch('/api/minimize', { method: 'POST' }).catch(() => {});
+      });
+    }
+
+    stopAllBtn.addEventListener('click', async () => {
+      await fetch('/api/stop-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true }),
+      });
+      showStatus('info', '⏹️ Deteniendo todos los posts activos...');
+    });
+
+    goIgTopBtn.addEventListener('click', async () => {
+      await fetch('/api/focus-ig', { method: 'POST' });
+    });
+
+    closeBtn.addEventListener('click', async () => {
+      showStatus('info', '🔒 Cerrando navegador y finalizando proceso...');
+      await fetch('/api/shutdown', { method: 'POST' }).catch(() => {});
+      window.close();
+    });
+  </script>
+</body>
+</html>
