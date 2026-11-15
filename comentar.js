@@ -121,22 +121,81 @@ function pickRandomUniqueUsers(users, count, lastKey = '') {
   return picked;
 }
 
+const GIVEAWAY_EMOJIS = [
+  '🔥', '🙌', '✨', '👏', '💯', '🚀', '🎉', '🍀', '⚡', '🤩',
+  '💪', '🌟', '🥳', '💥', '🤞', '❤️', '🫶', '🎊', '🏆', '💎',
+  '👑', '💫', '🌈', '☀️', '🎯', '🥁', '🎁', '🎈', '🥂', '🌠',
+];
+
 /**
  * Construye el texto final del comentario:
  * - Si `baseComment` está vacío, devuelve únicamente los usuarios etiquetados.
  * - Si `baseComment` tiene texto, combina el mensaje y los etiquetados.
+ * - Si `antiDuplicate` está activo, garantiza mediante un Set por post (`usedSet`)
+ *   que NUNCA se envíe dos veces el mismo string exacto (evitando que AppSorteos,
+ *   Simpliers o Instagram colapsen o filtren comentarios repetidos).
  */
-function buildCommentString(baseComment, selectedUsers) {
+function buildUniqueGiveawayComment({
+  users,
+  tagsPerComment,
+  baseComment,
+  antiDuplicate = true,
+  usedSet,
+  lastKey = '',
+}) {
   const cleanMsg = (baseComment || '').trim();
-  const tagsPart = selectedUsers.join(' ');
 
-  if (cleanMsg && tagsPart) {
-    return `${cleanMsg} ${tagsPart}`;
+  // Intentamos hasta 80 candidatos para encontrar una combinación nunca antes enviada en este post
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const selectedUsers = pickRandomUniqueUsers(users, tagsPerComment, lastKey);
+    const tagsPart = selectedUsers.join(' ');
+
+    let coreText = '';
+    if (cleanMsg && tagsPart) {
+      // En intentos avanzados también podemos alternar orden (mensaje + tags vs tags + mensaje)
+      coreText = attempt > 40 && attempt % 2 === 1
+        ? `${tagsPart} ${cleanMsg}`
+        : `${cleanMsg} ${tagsPart}`;
+    } else if (tagsPart) {
+      coreText = tagsPart;
+    } else {
+      coreText = cleanMsg;
+    }
+
+    if (!antiDuplicate || !usedSet) {
+      return { commentText: coreText, combinationKey: tagsPart };
+    }
+
+    // 1. Si la combinación pura aún no ha salido en este post, la usamos limpia primero
+    const normalizedCore = coreText.trim().toLowerCase();
+    if (!usedSet.has(normalizedCore)) {
+      usedSet.add(normalizedCore);
+      return { commentText: coreText, combinationKey: tagsPart };
+    }
+
+    // 2. Si esa pareja de usuarios ya salió antes, agregamos 1 o 2 emojis aleatorios de sorteo
+    const e1 = GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)];
+    const e2 = GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)];
+    const suffix = attempt < 35 ? e1 : `${e1}${e2}`;
+    const candidate = `${coreText} ${suffix}`;
+    const normalizedCandidate = candidate.trim().toLowerCase();
+
+    if (!usedSet.has(normalizedCandidate)) {
+      usedSet.add(normalizedCandidate);
+      return { commentText: candidate, combinationKey: tagsPart };
+    }
   }
-  if (tagsPart) {
-    return tagsPart;
-  }
-  return cleanMsg;
+
+  // Fallback garantizado único con combinación triple de emojis si se superan cientos de envíos
+  const selectedUsers = pickRandomUniqueUsers(users, tagsPerComment, lastKey);
+  const tagsPart = selectedUsers.join(' ');
+  const base = cleanMsg && tagsPart ? `${cleanMsg} ${tagsPart}` : tagsPart || cleanMsg;
+  const e1 = GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)];
+  const e2 = GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)];
+  const e3 = GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)];
+  const fallbackText = `${base} ${e1}${e2}${e3}`;
+  if (usedSet) usedSet.add(fallbackText.trim().toLowerCase());
+  return { commentText: fallbackText, combinationKey: tagsPart };
 }
 
 /**
@@ -353,6 +412,7 @@ function crearYEjecutarTareaPost(context, config) {
     baseComment = '',
     tagsPerComment = 0,
     totalComments = 100,
+    antiDuplicate = true,
     minDelay = 65,
     maxDelay = 135,
     minIntervalSec = 38,
@@ -409,15 +469,22 @@ function crearYEjecutarTareaPost(context, config) {
       }
 
       let lastCombinationKey = '';
+      const usedCommentsSet = new Set();
 
       for (let i = 1; i <= totalComments; i++) {
         if (job.cancelRequested) {
           throw new Error('Envío detenido manualmente por el usuario.');
         }
 
-        const chosenUsers = pickRandomUniqueUsers(users, tagsPerComment, lastCombinationKey);
-        lastCombinationKey = chosenUsers.join(' ');
-        const commentToSend = buildCommentString(baseComment, chosenUsers);
+        const { commentText: commentToSend, combinationKey } = buildUniqueGiveawayComment({
+          users,
+          tagsPerComment,
+          baseComment,
+          antiDuplicate,
+          usedSet: usedCommentsSet,
+          lastKey: lastCombinationKey,
+        });
+        lastCombinationKey = combinationKey;
 
         job.phaseMessage = `⏳ Esperando turno de escritura para comentario #${i}/${totalComments}...`;
 

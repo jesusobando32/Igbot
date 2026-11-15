@@ -522,6 +522,11 @@
     </div>
 
     <!-- Botones de Acción -->
+    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #f59e0b; margin-bottom: 10px; cursor: pointer;">
+      <input type="checkbox" id="antiDuplicate" checked />
+      🎯 Modo Sorteo Anti-Deduplicación (Nunca repite el mismo texto exacto; añade variación de emojis cuando una pareja de amigos ya salió para que AppSorteos/Simpliers cuente los 100 boletos)
+    </label>
+
     <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #34d399; margin-bottom: 14px; cursor: pointer;">
       <input type="checkbox" id="autoMinimize" checked />
       🗕 Minimizar navegador automáticamente al iniciar (sigue comentando en segundo plano sin interrumpir tu PC)
@@ -859,6 +864,7 @@
       const [minIntervalSec, maxIntervalSec] = parseRange(intervalSecInput.value, 38, 75);
       const batchSize = Math.max(0, parseInt(batchSizeInput.value, 10) || 0);
       const [minBatchPauseMin, maxBatchPauseMin] = parseRange(batchPauseMinInput.value, 4, 7);
+      const antiDuplicate = document.getElementById('antiDuplicate').checked;
 
       const rows = Array.from(document.querySelectorAll('.post-entry'));
       const payloads = [];
@@ -897,6 +903,7 @@
           baseComment,
           tagsPerComment,
           totalComments,
+          antiDuplicate,
           minDelay,
           maxDelay,
           minIntervalSec,
