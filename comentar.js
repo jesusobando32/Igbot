@@ -10,6 +10,7 @@ const { chromium } = require('playwright');
 const CONFIG = {
   sessionFile: path.join(__dirname, 'sesion_ig.json'),
   savedUsersFile: path.join(__dirname, 'usuarios_guardados.json'),
+  statsFile: path.join(__dirname, 'estadisticas.json'),
   errorScreenshot: path.join(__dirname, 'error_screenshot.png'),
   panelHtmlFile: path.join(__dirname, 'panel.html'),
   loginUrl: 'https://www.instagram.com/accounts/login/',
@@ -27,6 +28,50 @@ const CONFIG = {
     '@caraujo_210',
   ],
 };
+
+function loadStats() {
+  try {
+    if (fs.existsSync(CONFIG.statsFile)) {
+      const parsed = JSON.parse(fs.readFileSync(CONFIG.statsFile, 'utf8'));
+      return {
+        totalHistoricalComments: Number(parsed.totalHistoricalComments) || 0,
+        tagCounts: parsed.tagCounts && typeof parsed.tagCounts === 'object' ? parsed.tagCounts : {},
+      };
+    }
+  } catch {}
+  return { totalHistoricalComments: 0, tagCounts: {} };
+}
+
+function saveStats(stats) {
+  try {
+    fs.writeFileSync(CONFIG.statsFile, JSON.stringify(stats, null, 2), 'utf8');
+  } catch {}
+}
+
+const ANALYTICS = {
+  sessionComments: 0,
+  ...loadStats(),
+};
+
+function recordCommentAnalytics(taggedUsers = []) {
+  ANALYTICS.sessionComments += 1;
+  ANALYTICS.totalHistoricalComments += 1;
+  for (const rawUser of taggedUsers) {
+    const u = rawUser.startsWith('@') ? rawUser.toLowerCase() : `@${rawUser.toLowerCase()}`;
+    ANALYTICS.tagCounts[u] = (ANALYTICS.tagCounts[u] || 0) + 1;
+  }
+  saveStats({
+    totalHistoricalComments: ANALYTICS.totalHistoricalComments,
+    tagCounts: ANALYTICS.tagCounts,
+  });
+}
+
+function resetAnalytics() {
+  ANALYTICS.sessionComments = 0;
+  ANALYTICS.totalHistoricalComments = 0;
+  ANALYTICS.tagCounts = {};
+  saveStats({ totalHistoricalComments: 0, tagCounts: {} });
+}
 
 function loadSavedUsers() {
   try {
@@ -124,78 +169,114 @@ function pickRandomUniqueUsers(users, count, lastKey = '') {
 const GIVEAWAY_EMOJIS = [
   '🔥', '🙌', '✨', '👏', '💯', '🚀', '🎉', '🍀', '⚡', '🤩',
   '💪', '🌟', '🥳', '💥', '🤞', '❤️', '🫶', '🎊', '🏆', '💎',
-  '👑', '💫', '🌈', '☀️', '🎯', '🥁', '🎁', '🎈', '🥂', '🌠',
+];
+
+const TEXT_VARIATION_SUFFIXES = [
+  '!', '!!', '🙌', '🔥', '✨', '🍀', '👏', '💯', '🚀', '🎉',
 ];
 
 /**
- * Construye el texto final del comentario:
- * - Si `baseComment` está vacío, devuelve únicamente los usuarios etiquetados.
- * - Si `baseComment` tiene texto, combina el mensaje y los etiquetados.
- * - Si `antiDuplicate` está activo, garantiza mediante un Set por post (`usedSet`)
- *   que NUNCA se envíe dos veces el mismo string exacto (evitando que AppSorteos,
- *   Simpliers o Instagram colapsen o filtren comentarios repetidos).
+ * Combina el texto complementario y los usuarios etiquetados cambiando el orden:
+ * - modo 0: "@user1 @user2 Texto" (Texto al final)
+ * - modo 1: "Texto @user1 @user2" (Texto al principio)
+ * - modo 2: "@user1 Texto @user2" (Texto en medio, si hay >= 2 etiquetados)
+ */
+function combineTextAndTags(phrase, selectedUsers, positionMode = 0) {
+  const cleanPhrase = (phrase || '').trim();
+  if (!cleanPhrase) {
+    return selectedUsers.join(' ');
+  }
+  if (!selectedUsers || selectedUsers.length === 0) {
+    return cleanPhrase;
+  }
+
+  const mode = positionMode % (selectedUsers.length >= 2 ? 3 : 2);
+  if (mode === 0) {
+    // Texto al final: "@jesus @leo SI se puede"
+    return `${selectedUsers.join(' ')} ${cleanPhrase}`;
+  }
+  if (mode === 1) {
+    // Texto al principio: "SI se puede @jesus @leo"
+    return `${cleanPhrase} ${selectedUsers.join(' ')}`;
+  }
+  // Texto intercalado: "@jesus SI se puede @leo"
+  const [firstUser, ...restUsers] = selectedUsers;
+  return `${firstUser} ${cleanPhrase} ${restUsers.join(' ')}`;
+}
+
+/**
+ * Construye el comentario garantizando:
+ * 1. Alternancia del orden del texto complementario (principio, final o medio).
+ * 2. Soporte para varias frases separadas por "|" (ej: "SI se puede | Vamos").
+ * 3. No repetir el mismo string exacto en el mismo post (`usedSet`).
+ * 4. Separación siempre con espacio antes y después de cada @usuario para no afectar regex.
  */
 function buildUniqueGiveawayComment({
   users,
   tagsPerComment,
   baseComment,
   antiDuplicate = true,
+  allowEmojis = true,
   usedSet,
   lastKey = '',
+  commentIndex = 1,
 }) {
-  const cleanMsg = (baseComment || '').trim();
+  // Permitir una frase o varias separadas por "|"
+  const phrases = String(baseComment || '')
+    .split('|')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
-  // Intentamos hasta 80 candidatos para encontrar una combinación nunca antes enviada en este post
-  for (let attempt = 0; attempt < 80; attempt++) {
+  for (let attempt = 0; attempt < 90; attempt++) {
     const selectedUsers = pickRandomUniqueUsers(users, tagsPerComment, lastKey);
     const tagsPart = selectedUsers.join(' ');
+    const chosenPhrase =
+      phrases.length > 0 ? phrases[(commentIndex + attempt) % phrases.length] : '';
 
-    let coreText = '';
-    if (cleanMsg && tagsPart) {
-      // En intentos avanzados también podemos alternar orden (mensaje + tags vs tags + mensaje)
-      coreText = attempt > 40 && attempt % 2 === 1
-        ? `${tagsPart} ${cleanMsg}`
-        : `${cleanMsg} ${tagsPart}`;
-    } else if (tagsPart) {
-      coreText = tagsPart;
-    } else {
-      coreText = cleanMsg;
-    }
+    // Rotamos la posición del texto (principio, final o intercalado)
+    const positionMode = (commentIndex + attempt) % 3;
+    const coreText = combineTextAndTags(chosenPhrase, selectedUsers, positionMode);
 
     if (!antiDuplicate || !usedSet) {
-      return { commentText: coreText, combinationKey: tagsPart };
+      return { commentText: coreText, combinationKey: tagsPart, selectedUsers };
     }
 
-    // 1. Si la combinación pura aún no ha salido en este post, la usamos limpia primero
     const normalizedCore = coreText.trim().toLowerCase();
     if (!usedSet.has(normalizedCore)) {
       usedSet.add(normalizedCore);
-      return { commentText: coreText, combinationKey: tagsPart };
+      return { commentText: coreText, combinationKey: tagsPart, selectedUsers };
     }
 
-    // 2. Si esa pareja de usuarios ya salió antes, agregamos 1 o 2 emojis aleatorios de sorteo
-    const e1 = GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)];
-    const e2 = GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)];
-    const suffix = attempt < 35 ? e1 : `${e1}${e2}`;
-    const candidate = `${coreText} ${suffix}`;
+    // Si la combinación + posición ya salió antes, añadimos una variación ligera separada por espacio
+    let suffix = '';
+    if (allowEmojis) {
+      const e1 = GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)];
+      suffix = attempt < 45 ? e1 : `${e1} !`;
+    } else {
+      const punct = ['!', '!!', '!', '...'][attempt % 4];
+      suffix = punct;
+    }
+
+    // Alternar si el sufijo va al final o al principio (siempre con espacio para proteger el @username)
+    const candidate =
+      attempt % 2 === 0 ? `${coreText} ${suffix}` : `${suffix} ${coreText}`;
     const normalizedCandidate = candidate.trim().toLowerCase();
 
     if (!usedSet.has(normalizedCandidate)) {
       usedSet.add(normalizedCandidate);
-      return { commentText: candidate, combinationKey: tagsPart };
+      return { commentText: candidate, combinationKey: tagsPart, selectedUsers };
     }
   }
 
-  // Fallback garantizado único con combinación triple de emojis si se superan cientos de envíos
   const selectedUsers = pickRandomUniqueUsers(users, tagsPerComment, lastKey);
   const tagsPart = selectedUsers.join(' ');
-  const base = cleanMsg && tagsPart ? `${cleanMsg} ${tagsPart}` : tagsPart || cleanMsg;
-  const e1 = GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)];
-  const e2 = GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)];
-  const e3 = GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)];
-  const fallbackText = `${base} ${e1}${e2}${e3}`;
+  const chosenPhrase = phrases.length > 0 ? phrases[0] : '';
+  const base = combineTextAndTags(chosenPhrase, selectedUsers, commentIndex % 3);
+  const fallbackText = allowEmojis
+    ? `${base} ${GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)]}`
+    : `${base} !`;
   if (usedSet) usedSet.add(fallbackText.trim().toLowerCase());
-  return { commentText: fallbackText, combinationKey: tagsPart };
+  return { commentText: fallbackText, combinationKey: tagsPart, selectedUsers };
 }
 
 /**
@@ -413,6 +494,7 @@ function crearYEjecutarTareaPost(context, config) {
     tagsPerComment = 0,
     totalComments = 100,
     antiDuplicate = true,
+    allowEmojis = true,
     minDelay = 65,
     maxDelay = 135,
     minIntervalSec = 38,
@@ -476,13 +558,15 @@ function crearYEjecutarTareaPost(context, config) {
           throw new Error('Envío detenido manualmente por el usuario.');
         }
 
-        const { commentText: commentToSend, combinationKey } = buildUniqueGiveawayComment({
+        const { commentText: commentToSend, combinationKey, selectedUsers } = buildUniqueGiveawayComment({
           users,
           tagsPerComment,
           baseComment,
           antiDuplicate,
+          allowEmojis,
           usedSet: usedCommentsSet,
           lastKey: lastCombinationKey,
+          commentIndex: i,
         });
         lastCombinationKey = combinationKey;
 
@@ -503,6 +587,7 @@ function crearYEjecutarTareaPost(context, config) {
         });
 
         job.completed = i;
+        recordCommentAnalytics(selectedUsers);
         GLOBAL_LOGS.push({
           jobId,
           index: i,
@@ -642,7 +727,20 @@ function startControlServer({ onStartBatch, onStopBatch, onFocusJob, onMinimize,
             }));
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ jobs: jobsSummary, logs: GLOBAL_LOGS }));
+          res.end(
+            JSON.stringify({
+              jobs: jobsSummary,
+              logs: GLOBAL_LOGS,
+              analytics: ANALYTICS,
+            })
+          );
+          return;
+        }
+
+        if (req.method === 'POST' && req.url === '/api/reset-stats') {
+          resetAnalytics();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, analytics: ANALYTICS }));
           return;
         }
 

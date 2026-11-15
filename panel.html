@@ -476,6 +476,35 @@
       </div>
     </div>
 
+    <!-- Estadísticas Globales y Ranking de Usuarios Más Etiquetados -->
+    <div style="background: #12151c; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+        <span style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8;">
+          📊 Analíticas Globales y Ranking de Etiquetados
+        </span>
+        <button type="button" class="btn-secondary" id="resetStatsBtn" style="padding: 4px 10px; font-size: 0.74rem;">
+          🔄 Reiniciar Contador
+        </button>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px;">
+        <div style="background: #181b23; border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
+          <div style="font-size: 0.74rem; color: var(--muted);">Comentarios (Esta Sesión)</div>
+          <div id="statSessionCount" style="font-size: 1.3rem; font-weight: 700; color: #34d399; margin-top: 2px;">0</div>
+        </div>
+        <div style="background: #181b23; border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
+          <div style="font-size: 0.74rem; color: var(--muted);">Total Histórico Escritos</div>
+          <div id="statTotalCount" style="font-size: 1.3rem; font-weight: 700; color: #f8fafc; margin-top: 2px;">0</div>
+        </div>
+        <div style="background: #181b23; border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
+          <div style="font-size: 0.74rem; color: var(--muted);">🏆 Más Etiquetado</div>
+          <div id="statTopUser" style="font-size: 0.95rem; font-weight: 700; color: #fbbf24; margin-top: 5px;">—</div>
+        </div>
+      </div>
+      <div id="tagRankingList" style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.78rem; color: var(--muted);">
+        Sin etiquetas registradas todavía.
+      </div>
+    </div>
+
     <!-- Lista de Usuarios Guardados -->
     <div class="form-group">
       <label for="usersList">
@@ -522,9 +551,14 @@
     </div>
 
     <!-- Botones de Acción -->
-    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #f59e0b; margin-bottom: 10px; cursor: pointer;">
+    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #f59e0b; margin-bottom: 8px; cursor: pointer;">
       <input type="checkbox" id="antiDuplicate" checked />
-      🎯 Modo Sorteo Anti-Deduplicación (Nunca repite el mismo texto exacto; añade variación de emojis cuando una pareja de amigos ya salió para que AppSorteos/Simpliers cuente los 100 boletos)
+      🎯 Modo Sorteo Anti-Deduplicación (Alterna el texto al principio, en medio o al final de los @usuarios y evita repetir strings exactos)
+    </label>
+
+    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #cbd5e1; margin-bottom: 8px; cursor: pointer;">
+      <input type="checkbox" id="allowEmojis" checked />
+      ✨ Permitir 1 emoji de variación (separado por espacio) cuando se agoten las combinaciones de texto y amigos
     </label>
 
     <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #34d399; margin-bottom: 14px; cursor: pointer;">
@@ -683,20 +717,31 @@
       userCountBadge.textContent = `${users.length} usuario(s)`;
 
       document.querySelectorAll('.post-entry').forEach((row) => {
-        const msg = row.querySelector('.row-msg').value.trim();
+        const rawMsg = row.querySelector('.row-msg').value.trim();
+        const phrases = rawMsg.split('|').map((s) => s.trim()).filter(Boolean);
+        const msg = phrases.length > 0 ? phrases[Math.floor(Math.random() * phrases.length)] : '';
         const tagsCount = Math.max(0, parseInt(row.querySelector('.row-tags').value, 10) || 0);
         const previewEl = row.querySelector('.preview-line');
 
         const chosen = tagsCount > 0 ? pickRandomUnique(users, Math.min(tagsCount, users.length)) : [];
-        const parts = [];
-        if (msg) parts.push(msg);
-        if (chosen.length > 0) parts.push(chosen.join(' '));
+        let example = '';
+        if (msg && chosen.length >= 2) {
+          const v1 = `${chosen.join(' ')} ${msg}`;
+          const v2 = `${msg} ${chosen.join(' ')}`;
+          const v3 = `${chosen[0]} ${msg} ${chosen.slice(1).join(' ')}`;
+          example = `"${v1}"  ó  "${v2}"  ó  "${v3}"`;
+        } else if (msg && chosen.length === 1) {
+          example = `"${chosen[0]} ${msg}"  ó  "${msg} ${chosen[0]}"`;
+        } else if (chosen.length > 0) {
+          example = `"${chosen.join(' ')}"`;
+        } else if (msg) {
+          example = `"${msg}"`;
+        }
 
-        const example = parts.join(' ');
         if (!example) {
           previewEl.textContent = '⚠️ Vacío: elige al menos 1 etiquetado o escribe un mensaje';
         } else {
-          previewEl.textContent = `👁️ Ejemplo aleatorio: "${example}"`;
+          previewEl.textContent = `👁️ Variaciones de orden: ${example}`;
         }
       });
     }
@@ -791,11 +836,43 @@
         .join('');
     }
 
+    function renderAnalytics(analytics) {
+      if (!analytics) return;
+      document.getElementById('statSessionCount').textContent = analytics.sessionComments || 0;
+      document.getElementById('statTotalCount').textContent = analytics.totalHistoricalComments || 0;
+
+      const tagCounts = analytics.tagCounts || {};
+      const entries = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
+      const topEl = document.getElementById('statTopUser');
+      const rankingEl = document.getElementById('tagRankingList');
+
+      if (entries.length === 0) {
+        topEl.textContent = '—';
+        rankingEl.textContent = 'Sin etiquetas registradas todavía.';
+        return;
+      }
+
+      const totalTags = entries.reduce((sum, [, count]) => sum + count, 0);
+      const [topUser, topCount] = entries[0];
+      topEl.textContent = `${topUser} (${topCount})`;
+
+      rankingEl.innerHTML = entries
+        .map(([user, count], idx) => {
+          const pct = totalTags > 0 ? Math.round((count / totalTags) * 100) : 0;
+          const medal = idx === 0 ? '🥇 ' : idx === 1 ? '🥈 ' : idx === 2 ? '🥉 ' : '';
+          return `<span style="background: #181b23; border: 1px solid var(--border); padding: 4px 9px; border-radius: 999px; color: #e2e8f0;">
+            ${medal}<strong>${user}</strong>: ${count} (${pct}%)
+          </span>`;
+        })
+        .join('');
+    }
+
     async function pollStatus() {
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
         renderTasks(data.jobs || []);
+        renderAnalytics(data.analytics);
 
         if (Array.isArray(data.logs)) {
           while (renderedLogCount < data.logs.length) {
@@ -805,6 +882,17 @@
         }
       } catch {}
     }
+
+    document.getElementById('resetStatsBtn').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/reset-stats', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          renderAnalytics(data.analytics);
+          showStatus('info', '🔄 Estadísticas globales reiniciadas a cero.');
+        }
+      } catch {}
+    });
 
     window.addEventListener('DOMContentLoaded', async () => {
       try {
@@ -865,6 +953,7 @@
       const batchSize = Math.max(0, parseInt(batchSizeInput.value, 10) || 0);
       const [minBatchPauseMin, maxBatchPauseMin] = parseRange(batchPauseMinInput.value, 4, 7);
       const antiDuplicate = document.getElementById('antiDuplicate').checked;
+      const allowEmojis = document.getElementById('allowEmojis').checked;
 
       const rows = Array.from(document.querySelectorAll('.post-entry'));
       const payloads = [];
@@ -904,6 +993,7 @@
           tagsPerComment,
           totalComments,
           antiDuplicate,
+          allowEmojis,
           minDelay,
           maxDelay,
           minIntervalSec,
