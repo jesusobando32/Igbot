@@ -516,18 +516,47 @@
       </div>
     </div>
 
-    <!-- Lista de Usuarios Guardados -->
-    <div class="form-group">
-      <label for="usersList">
-        <span>👥 Tus Usuarios de Instagram Guardados (<span id="userCountBadge">7 usuarios</span>)</span>
+    <!-- Dos Secciones de Usuarios Guardados: Frecuentes (5x) vs Ocasionales (1x + Cooldown) -->
+    <div style="background: #12151c; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+        <span style="font-size: 0.85rem; font-weight: 700; color: #f8fafc;">
+          👥 Selección Ponderada de Usuarios (<span id="userCountBadge">7 usuarios totales</span>)
+        </span>
         <button type="button" class="btn-success" id="saveUsersBtn">
-          💾 Guardar Cambios en Lista de Usuarios
+          💾 Guardar Ambas Listas de Usuarios
         </button>
-      </label>
-      <textarea
-        id="usersList"
-        placeholder="Uno por línea o separados por espacio..."
-      ></textarea>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+        <div>
+          <label for="frequentUsersList" style="color: #34d399;">
+            <span>🔥 1. Frecuentes / Confianza (Peso 5x)</span>
+            <span class="hint">Salen a cada rato sin límite</span>
+          </label>
+          <textarea
+            id="frequentUsersList"
+            placeholder="Cuentas tuyas, mamá o amigos de confianza que no importa etiquetar seguido..."
+          ></textarea>
+        </div>
+
+        <div>
+          <label for="occasionalUsersList" style="color: #fbbf24;">
+            <span>🌙 2. Ocasionales / No Spamear (Peso 1x + Cooldown)</span>
+            <span class="hint">Salen poco y descansan varios turnos</span>
+          </label>
+          <textarea
+            id="occasionalUsersList"
+            placeholder="Amigos que no quieres saturar de menciones..."
+          ></textarea>
+        </div>
+      </div>
+
+      <div id="penalizedBanner" style="display: none; margin-top: 10px; padding: 8px 12px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; font-size: 0.78rem; color: #fde68a; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <span id="penalizedText">⚠️ Usuarios con peso mínimo (0.15x) por alerta de bloqueo/restricción:</span>
+        <button type="button" class="btn-secondary" id="clearPenaltyBtn" style="padding: 4px 9px; font-size: 0.73rem;">
+          ♻️ Restaurar Peso Normal
+        </button>
+      </div>
     </div>
 
     <!-- Constructor de 1 o varios Posts para lanzar de una vez -->
@@ -618,7 +647,11 @@
   </div>
 
   <script>
-    const usersListInput = document.getElementById('usersList');
+    const frequentUsersInput = document.getElementById('frequentUsersList');
+    const occasionalUsersInput = document.getElementById('occasionalUsersList');
+    const penalizedBanner = document.getElementById('penalizedBanner');
+    const penalizedText = document.getElementById('penalizedText');
+    const clearPenaltyBtn = document.getElementById('clearPenaltyBtn');
     const userCountBadge = document.getElementById('userCountBadge');
     const saveUsersBtn = document.getElementById('saveUsersBtn');
     const postsBuilder = document.getElementById('postsBuilder');
@@ -723,9 +756,21 @@
       updateAllPreviews();
     }
 
+    function getBothUserGroups() {
+      const frequentUsers = parseUsers(frequentUsersInput.value);
+      const occasionalUsers = parseUsers(occasionalUsersInput.value).filter(
+        (u) => !frequentUsers.includes(u)
+      );
+      return {
+        frequentUsers,
+        occasionalUsers,
+        allUsers: [...frequentUsers, ...occasionalUsers],
+      };
+    }
+
     function updateAllPreviews() {
-      const users = parseUsers(usersListInput.value);
-      userCountBadge.textContent = `${users.length} usuario(s)`;
+      const { frequentUsers, occasionalUsers, allUsers } = getBothUserGroups();
+      userCountBadge.textContent = `${frequentUsers.length} frecuentes + ${occasionalUsers.length} ocasionales (${allUsers.length} total)`;
 
       document.querySelectorAll('.post-entry').forEach((row) => {
         const rawMsg = row.querySelector('.row-msg').value.trim();
@@ -734,7 +779,20 @@
         const tagsCount = Math.max(0, parseInt(row.querySelector('.row-tags').value, 10) || 0);
         const previewEl = row.querySelector('.preview-line');
 
-        const chosen = tagsCount > 0 ? pickRandomUnique(users, Math.min(tagsCount, users.length)) : [];
+        // Simular muestreo con preferencia a frecuentes en la vista previa
+        const weightedPool = [
+          ...frequentUsers,
+          ...frequentUsers,
+          ...frequentUsers,
+          ...occasionalUsers,
+        ];
+        const chosen = [];
+        for (const candidate of pickRandomUnique(weightedPool, weightedPool.length)) {
+          if (!chosen.includes(candidate) && chosen.length < Math.min(tagsCount, allUsers.length)) {
+            chosen.push(candidate);
+          }
+        }
+
         let example = '';
         if (msg && chosen.length >= 2) {
           const v1 = `${chosen.join(' ')} ${msg}`;
@@ -757,7 +815,8 @@
       });
     }
 
-    usersListInput.addEventListener('input', updateAllPreviews);
+    frequentUsersInput.addEventListener('input', updateAllPreviews);
+    occasionalUsersInput.addEventListener('input', updateAllPreviews);
     addPostRowBtn.addEventListener('click', () => createPostEntryRow());
 
     function showStatus(type, message) {
@@ -909,12 +968,27 @@
         .join('');
     }
 
+    function renderPenalizedBanner(userGroups) {
+      if (!userGroups || !userGroups.penalizedUsers) {
+        penalizedBanner.style.display = 'none';
+        return;
+      }
+      const pKeys = Object.keys(userGroups.penalizedUsers);
+      if (pKeys.length === 0) {
+        penalizedBanner.style.display = 'none';
+        return;
+      }
+      penalizedBanner.style.display = 'flex';
+      penalizedText.innerHTML = `⚠️ <strong>Movidos automáticamente a Ocasionales con peso mínimo (0.15x) por alerta de mención/bloqueo:</strong> ${pKeys.join(', ')}`;
+    }
+
     async function pollStatus() {
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
         renderTasks(data.jobs || []);
         renderAnalytics(data.analytics, data.jobs || []);
+        renderPenalizedBanner(data.userGroups);
 
         if (Array.isArray(data.logs)) {
           while (renderedLogCount < data.logs.length) {
@@ -924,6 +998,21 @@
         }
       } catch {}
     }
+
+    clearPenaltyBtn.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/clear-penalty', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          renderPenalizedBanner(data.userGroups);
+          showStatus('success', '♻️ Peso normal restaurado para todos los usuarios.');
+        }
+      } catch {}
+    });
 
     document.getElementById('resetStatsBtn').addEventListener('click', async () => {
       try {
@@ -946,8 +1035,10 @@
       try {
         const res = await fetch('/api/init');
         const data = await res.json();
-        if (Array.isArray(data.savedUsers) && data.savedUsers.length > 0) {
-          usersListInput.value = data.savedUsers.join('\n');
+        if (data.userGroups) {
+          frequentUsersInput.value = (data.userGroups.frequentUsers || []).join('\n');
+          occasionalUsersInput.value = (data.userGroups.occasionalUsers || []).join('\n');
+          renderPenalizedBanner(data.userGroups);
         }
 
         const params = new URLSearchParams(window.location.search);
@@ -981,20 +1072,24 @@
       } catch {}
     });
 
-    // Guardar cambios en la lista de usuarios favoritos
+    // Guardar cambios en las dos listas de usuarios (Frecuentes y Ocasionales)
     saveUsersBtn.addEventListener('click', async () => {
-      const users = parseUsers(usersListInput.value);
+      const { frequentUsers, occasionalUsers, allUsers } = getBothUserGroups();
       try {
         const res = await fetch('/api/save-users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ users }),
+          body: JSON.stringify({ frequentUsers, occasionalUsers }),
         });
         const data = await res.json();
         if (data.ok) {
-          usersListInput.value = users.join('\n');
+          frequentUsersInput.value = frequentUsers.join('\n');
+          occasionalUsersInput.value = occasionalUsers.join('\n');
           updateAllPreviews();
-          showStatus('success', `💾 ¡Se guardaron ${users.length} usuarios en usuarios_guardados.json!`);
+          showStatus(
+            'success',
+            `💾 ¡Guardados ${frequentUsers.length} frecuentes y ${occasionalUsers.length} ocasionales (${allUsers.length} total)!`
+          );
         }
       } catch (err) {
         showStatus('error', '⚠️ No se pudo guardar la lista: ' + err.message);
@@ -1020,7 +1115,7 @@
     });
 
     submitBtn.addEventListener('click', async () => {
-      const users = parseUsers(usersListInput.value);
+      const { frequentUsers, occasionalUsers, allUsers } = getBothUserGroups();
       const [minDelay, maxDelay] = parseRange(typingDelayInput.value, 65, 135);
       const [minIntervalSec, maxIntervalSec] = parseRange(intervalSecInput.value, 38, 75);
       const batchSize = Math.max(0, parseInt(batchSizeInput.value, 10) || 0);
@@ -1043,10 +1138,10 @@
           return;
         }
 
-        if (tagsPerComment > 0 && users.length < tagsPerComment) {
+        if (tagsPerComment > 0 && allUsers.length < tagsPerComment) {
           showStatus(
             'error',
-            `⚠️ Pediste etiquetar a ${tagsPerComment} usuario(s), pero solo hay ${users.length} en tu lista.`
+            `⚠️ Pediste etiquetar a ${tagsPerComment} usuario(s), pero solo hay ${allUsers.length} entre tus dos listas.`
           );
           return;
         }
@@ -1061,7 +1156,8 @@
 
         payloads.push({
           postUrl,
-          users,
+          frequentUsers,
+          occasionalUsers,
           baseComment,
           tagsPerComment,
           totalComments,

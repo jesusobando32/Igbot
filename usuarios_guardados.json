@@ -1,9 +1,14 @@
-[
-  "@jesus__obando",
-  "@ypetto",
-  "@leoibarrap",
-  "@leydimar_obando",
-  "@daveecr_",
-  "@sebastian_llambi",
-  "@caraujo_210"
-]
+{
+  "frequentUsers": [
+    "@jesus__obando",
+    "@ypetto",
+    "@leoibarrap",
+    "@leydimar_obando"
+  ],
+  "occasionalUsers": [
+    "@daveecr_",
+    "@sebastian_llambi",
+    "@caraujo_210"
+  ],
+  "penalizedUsers": {}
+}

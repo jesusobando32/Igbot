@@ -431,7 +431,7 @@
   <div class="toast" id="toastBox"></div>
 
   <script>
-    let cachedSavedUsers = [];
+    let cachedUserGroups = { frequentUsers: [], occasionalUsers: [], penalizedUsers: {} };
     let cachedCatalog = {};
 
     function showToast(msg) {
@@ -450,7 +450,8 @@
       const cfg = post.savedConfig || {};
       const payload = {
         postUrl: post.postUrl,
-        users: cachedSavedUsers,
+        frequentUsers: cachedUserGroups.frequentUsers || [],
+        occasionalUsers: cachedUserGroups.occasionalUsers || [],
         baseComment: cfg.baseComment !== undefined ? cfg.baseComment : '',
         tagsPerComment: cfg.tagsPerComment !== undefined ? cfg.tagsPerComment : 2,
         totalComments: cfg.totalComments || 100,
@@ -497,7 +498,7 @@
         const res = await fetch('/api/status');
         const data = await res.json();
         const analytics = data.analytics || {};
-        cachedSavedUsers = data.savedUsers || [];
+        cachedUserGroups = data.userGroups || { frequentUsers: [], occasionalUsers: [], penalizedUsers: {} };
         cachedCatalog = analytics.postsCatalog || {};
 
         // 1. KPIs Globales
@@ -517,15 +518,24 @@
           document.getElementById('kpiTopUserSub').textContent = `Etiquetado ${topCount} veces (${topPct}% del total)`;
 
           const maxCount = tagEntries[0][1] || 1;
+          const freqSet = new Set((cachedUserGroups.frequentUsers || []).map((u) => u.toLowerCase()));
+          const penMap = cachedUserGroups.penalizedUsers || {};
+
           document.getElementById('rankingContainer').innerHTML = tagEntries
             .map(([user, count], index) => {
               const pct = totalMentions > 0 ? Math.round((count / totalMentions) * 100) : 0;
               const barWidth = Math.round((count / maxCount) * 100);
               const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`;
+              let groupTag = '🌙 Ocasional (1x)';
+              if (penMap[user.toLowerCase()]) {
+                groupTag = '⚠️ Restringido (0.15x)';
+              } else if (freqSet.has(user.toLowerCase())) {
+                groupTag = '🔥 Confianza (5x)';
+              }
               return `
                 <div class="rank-item">
                   <div class="rank-top">
-                    <strong>${medal} ${user}</strong>
+                    <strong>${medal} ${user} <span style="font-size: 0.72rem; font-weight: 400; color: var(--muted);">(${groupTag})</span></strong>
                     <span style="color: var(--muted);">${count} veces (${pct}%)</span>
                   </div>
                   <div class="rank-bar-bg">

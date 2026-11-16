@@ -154,20 +154,101 @@ function resetAnalytics() {
   saveStats();
 }
 
-function loadSavedUsers() {
+function normalizeHandle(raw) {
+  const clean = String(raw || '').trim().replace(/\s+/g, '');
+  if (!clean) return '';
+  return clean.startsWith('@') ? clean.toLowerCase() : `@${clean.toLowerCase()}`;
+}
+
+function loadSavedUsersGroups() {
   try {
     if (fs.existsSync(CONFIG.savedUsersFile)) {
       const parsed = JSON.parse(fs.readFileSync(CONFIG.savedUsersFile, 'utf8'));
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+      if (Array.isArray(parsed)) {
+        return {
+          frequentUsers: parsed.slice(0, 4).map(normalizeHandle).filter(Boolean),
+          occasionalUsers: parsed.slice(4).map(normalizeHandle).filter(Boolean),
+          penalizedUsers: {},
+        };
+      }
+      if (parsed && typeof parsed === 'object') {
+        return {
+          frequentUsers: Array.isArray(parsed.frequentUsers)
+            ? [...new Set(parsed.frequentUsers.map(normalizeHandle).filter(Boolean))]
+            : CONFIG.defaultUsers.slice(0, 4),
+          occasionalUsers: Array.isArray(parsed.occasionalUsers)
+            ? [...new Set(parsed.occasionalUsers.map(normalizeHandle).filter(Boolean))]
+            : CONFIG.defaultUsers.slice(4),
+          penalizedUsers:
+            parsed.penalizedUsers && typeof parsed.penalizedUsers === 'object'
+              ? parsed.penalizedUsers
+              : {},
+        };
       }
     }
   } catch {}
-  return CONFIG.defaultUsers;
+  return {
+    frequentUsers: CONFIG.defaultUsers.slice(0, 4),
+    occasionalUsers: CONFIG.defaultUsers.slice(4),
+    penalizedUsers: {},
+  };
 }
 
-function saveUsersToDisk(users) {
-  fs.writeFileSync(CONFIG.savedUsersFile, JSON.stringify(users, null, 2), 'utf8');
+function saveUsersGroupsToDisk(groups) {
+  const current = loadSavedUsersGroups();
+  const frequentUsers = Array.isArray(groups.frequentUsers)
+    ? [...new Set(groups.frequentUsers.map(normalizeHandle).filter(Boolean))]
+    : current.frequentUsers;
+  const occasionalSet = new Set(
+    (Array.isArray(groups.occasionalUsers) ? groups.occasionalUsers : current.occasionalUsers)
+      .map(normalizeHandle)
+      .filter((u) => u && !frequentUsers.includes(u))
+  );
+  const penalizedUsers =
+    groups.penalizedUsers !== undefined ? groups.penalizedUsers : current.penalizedUsers;
+
+  const dataToSave = {
+    frequentUsers,
+    occasionalUsers: [...occasionalSet],
+    penalizedUsers,
+  };
+  fs.writeFileSync(CONFIG.savedUsersFile, JSON.stringify(dataToSave, null, 2), 'utf8');
+  return dataToSave;
+}
+
+/**
+ * Mueve automáticamente a un usuario del Grupo Frecuente al Grupo Ocasional
+ * con peso mínimo (0.15) cuando Instagram reporta bloqueo o restricción de mención,
+ * sin eliminarlo de la lista.
+ */
+function demoteUserToOccasionalMinWeight(rawUser, reason = 'Restricción/bloqueo detectado en IG') {
+  const u = normalizeHandle(rawUser);
+  if (!u) return null;
+  const groups = loadSavedUsersGroups();
+
+  groups.frequentUsers = groups.frequentUsers.filter((item) => item !== u);
+  if (!groups.occasionalUsers.includes(u)) {
+    groups.occasionalUsers.push(u);
+  }
+
+  const prev = groups.penalizedUsers[u] || { strikes: 0 };
+  groups.penalizedUsers[u] = {
+    weight: 0.15,
+    strikes: (prev.strikes || 0) + 1,
+    reason,
+    updatedAt: new Date().toISOString(),
+  };
+
+  saveUsersGroupsToDisk(groups);
+  console.warn(
+    `⚠️ [Contingencia] Usuario ${u} movido automáticamente a Ocasionales con peso mínimo (0.15). Motivo: ${reason}`
+  );
+  return groups;
+}
+
+function loadSavedUsers() {
+  const { frequentUsers, occasionalUsers } = loadSavedUsersGroups();
+  return [...frequentUsers, ...occasionalUsers];
 }
 
 // Argumentos opcionales por CLI
@@ -224,27 +305,78 @@ function getRandomInt(min, max) {
 }
 
 /**
- * Selecciona `count` usuarios aleatorios de la lista SIN repetir ninguno
- * dentro del mismo comentario (algoritmo Fisher-Yates).
+ * Algoritmo de Muestreo Ponderado sin Reemplazo + Cooldown:
+ * - Grupo Frecuentes/Confianza (`frequentUsers`): Peso 5.0x y sin cooldown.
+ * - Grupo Ocasionales/No Spamear (`occasionalUsers`): Peso 1.0x, y tras ser elegido
+ *   entra en cooldown durante `cooldownTurns` comentarios (bajando su peso a 0.18).
+ * - Usuarios penalizados por bloqueo/restricción (`penalizedUsers`): Peso mínimo 0.15x.
+ * - `excludedInTurn`: usuarios que fallaron en el intento inmediato anterior de este mismo turno.
  */
-function pickRandomUniqueUsers(users, count, lastKey = '') {
-  if (!Array.isArray(users) || users.length === 0 || count <= 0) return [];
-  const safeCount = Math.min(count, users.length);
+function pickWeightedUniqueUsers({
+  frequentUsers = [],
+  occasionalUsers = [],
+  penalizedUsers = {},
+  count = 2,
+  recentTurnMap = new Map(),
+  currentTurn = 1,
+  cooldownTurns = 4,
+  excludedInTurn = new Set(),
+  lastKey = '',
+}) {
+  const allCandidates = [...new Set([...frequentUsers, ...occasionalUsers])]
+    .map(normalizeHandle)
+    .filter((u) => u && !excludedInTurn.has(u));
 
-  let picked = [];
+  if (allCandidates.length === 0 || count <= 0) return [];
+  const safeCount = Math.min(count, allCandidates.length);
+  const freqSet = new Set(frequentUsers.map(normalizeHandle));
+
+  let bestPicked = [];
+
   for (let attempt = 0; attempt < 6; attempt++) {
-    const copy = [...users];
-    for (let i = copy.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [copy[i], copy[j]] = [copy[j], copy[i]];
+    const pool = [...allCandidates];
+    const picked = [];
+
+    for (let k = 0; k < safeCount; k++) {
+      const weights = pool.map((u) => {
+        if (penalizedUsers && penalizedUsers[u]) {
+          return Number(penalizedUsers[u].weight) || 0.15;
+        }
+        if (freqSet.has(u)) {
+          return 5.0; // Peso 5x para cuentas de confianza (sin cooldown)
+        }
+        // Usuario ocasional: verificar si está en ventana de enfriamiento (cooldown)
+        const lastUsedTurn = recentTurnMap.get(u);
+        if (lastUsedTurn !== undefined && currentTurn - lastUsedTurn <= cooldownTurns) {
+          return 0.18; // Enfriamiento activo
+        }
+        return 1.0; // Peso base 1x para ocasionales fuera de enfriamiento
+      });
+
+      const totalWeight = weights.reduce((acc, w) => acc + w, 0);
+      let r = Math.random() * totalWeight;
+      let chosenIdx = 0;
+
+      for (let idx = 0; idx < pool.length; idx++) {
+        r -= weights[idx];
+        if (r <= 0) {
+          chosenIdx = idx;
+          break;
+        }
+      }
+
+      picked.push(pool[chosenIdx]);
+      pool.splice(chosenIdx, 1);
     }
-    picked = copy.slice(0, safeCount);
+
+    bestPicked = picked;
     const currentKey = picked.join(' ');
-    if (currentKey !== lastKey || users.length <= safeCount) {
+    if (currentKey !== lastKey || allCandidates.length <= safeCount) {
       break;
     }
   }
-  return picked;
+
+  return bestPicked;
 }
 
 const GIVEAWAY_EMOJIS = [
@@ -293,7 +425,12 @@ function combineTextAndTags(phrase, selectedUsers, positionMode = 0) {
  * 4. Separación siempre con espacio antes y después de cada @usuario para no afectar regex.
  */
 function buildUniqueGiveawayComment({
-  users,
+  frequentUsers = [],
+  occasionalUsers = [],
+  penalizedUsers = {},
+  recentTurnMap = new Map(),
+  cooldownTurns = 4,
+  excludedInTurn = new Set(),
   tagsPerComment,
   baseComment,
   antiDuplicate = true,
@@ -309,7 +446,17 @@ function buildUniqueGiveawayComment({
     .filter(Boolean);
 
   for (let attempt = 0; attempt < 90; attempt++) {
-    const selectedUsers = pickRandomUniqueUsers(users, tagsPerComment, lastKey);
+    const selectedUsers = pickWeightedUniqueUsers({
+      frequentUsers,
+      occasionalUsers,
+      penalizedUsers,
+      count: tagsPerComment,
+      recentTurnMap,
+      currentTurn: commentIndex,
+      cooldownTurns,
+      excludedInTurn,
+      lastKey,
+    });
     const tagsPart = selectedUsers.join(' ');
     const chosenPhrase =
       phrases.length > 0 ? phrases[(commentIndex + attempt) % phrases.length] : '';
@@ -349,7 +496,17 @@ function buildUniqueGiveawayComment({
     }
   }
 
-  const selectedUsers = pickRandomUniqueUsers(users, tagsPerComment, lastKey);
+  const selectedUsers = pickWeightedUniqueUsers({
+    frequentUsers,
+    occasionalUsers,
+    penalizedUsers,
+    count: tagsPerComment,
+    recentTurnMap,
+    currentTurn: commentIndex,
+    cooldownTurns,
+    excludedInTurn,
+    lastKey,
+  });
   const tagsPart = selectedUsers.join(' ');
   const chosenPhrase = phrases.length > 0 ? phrases[0] : '';
   const base = combineTextAndTags(chosenPhrase, selectedUsers, commentIndex % 3);
@@ -686,10 +843,124 @@ function calculateWinProbabilities(myCommentsCount, postTotalComments) {
 }
 
 /**
- * Publica un único comentario dentro de la pestaña dedicada del post
- * EN SEGUNDO PLANO (sin llamar a bringToFront para no robar el foco de Windows).
+ * Cierra cualquier modal o alerta inesperada en Instagram ("Aceptar", "OK", "Cerrar",
+ * "Ahora no", "Cancelar", etc.) para que el bot nunca se quede bloqueado en pantalla.
  */
-async function publicarUnComentarioEnPagina(jobPage, commentToSend, minDelay, maxDelay, shouldCancel) {
+async function dismissUnexpectedInstagramAlerts(page) {
+  try {
+    const closeAlertBtn = page.locator(
+      'div[role="dialog"] button:has-text("Aceptar"), ' +
+      'div[role="dialog"] button:has-text("OK"), ' +
+      'div[role="dialog"] button:has-text("Cerrar"), ' +
+      'div[role="dialog"] button:has-text("Close"), ' +
+      'div[role="dialog"] button:has-text("Ahora no"), ' +
+      'div[role="dialog"] button:has-text("Not now"), ' +
+      'div[role="dialog"] div[role="button"]:has-text("Aceptar"), ' +
+      'div[role="dialog"] div[role="button"]:has-text("OK"), ' +
+      'div[role="dialog"] div[role="button"]:has-text("Cerrar")'
+    ).first();
+
+    if (await closeAlertBtn.isVisible({ timeout: 1200 }).catch(() => false)) {
+      await closeAlertBtn.click().catch(() => {});
+      await page.waitForTimeout(700);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+/**
+ * Inspecciona si Instagram mostró una alerta de error al intentar publicar
+ * (por ejemplo, si un amigo te bloqueó, restringió menciones o hay un aviso temporal).
+ * Lee el mensaje, cierra el diálogo y devuelve qué ocurrió.
+ */
+async function inspectAndDismissPublishAlert(page, selectedUsers = []) {
+  try {
+    const alertInfo = await page.evaluate(() => {
+      const dialog = document.querySelector('div[role="dialog"], div[role="alert"]');
+      const dialogText = dialog ? dialog.innerText || '' : '';
+      const bodyText = document.body ? document.body.innerText || '' : '';
+      return {
+        hasDialog: Boolean(dialog),
+        dialogText: dialogText.slice(0, 500),
+        bodySnippet: bodyText.slice(0, 2500),
+      };
+    });
+
+    const combinedText = `${alertInfo.dialogText}\n${alertInfo.bodySnippet}`;
+
+    // 1. Detectar alerta de restricción de mención o bloqueo de usuario
+    const mentionBlockRegex =
+      /(?:no se puede mencionar|can't mention|no permite que|doesn't allow|restringi|restricted|no puedes mencionar|cannot mention)/i;
+
+    if (mentionBlockRegex.test(combinedText)) {
+      // Buscar si el texto de la alerta nombra explícitamente a alguno de los usuarios etiquetados
+      const explicitUsers = [];
+      for (const u of selectedUsers) {
+        const bareName = u.replace(/^@/, '').toLowerCase();
+        if (bareName && combinedText.toLowerCase().includes(bareName)) {
+          explicitUsers.push(u);
+        }
+      }
+
+      await dismissUnexpectedInstagramAlerts(page);
+      await page.keyboard.press('Escape').catch(() => {});
+
+      return {
+        type: 'mention_blocked',
+        alertText: alertInfo.dialogText || 'Restricción de mención detectada en Instagram',
+        explicitUsers,
+      };
+    }
+
+    // 2. Detectar límite temporal de frecuencia (Rate Limit / Action Block)
+    const rateLimitRegex =
+      /(?:Inténtalo de nuevo más tarde|Try Again Later|Restringimos determinadas actividades|We restrict certain activity)/i;
+
+    if (rateLimitRegex.test(combinedText)) {
+      await dismissUnexpectedInstagramAlerts(page);
+      await page.keyboard.press('Escape').catch(() => {});
+      return {
+        type: 'rate_limit',
+        alertText: alertInfo.dialogText || 'Aviso temporal de frecuencia en Instagram',
+      };
+    }
+
+    // 3. Detectar fallo genérico de envío ("No se pudo publicar el comentario" / "Couldn't post comment")
+    const genericFailRegex = /(?:No se pudo publicar el comentario|Couldn't post comment)/i;
+    if (genericFailRegex.test(combinedText)) {
+      await dismissUnexpectedInstagramAlerts(page);
+      await page.keyboard.press('Escape').catch(() => {});
+      return {
+        type: 'generic_post_fail',
+        alertText: 'No se pudo publicar el comentario en este intento',
+      };
+    }
+
+    // Si había un diálogo desconocido, lo cerramos preventivamente
+    if (alertInfo.hasDialog) {
+      await dismissUnexpectedInstagramAlerts(page);
+    }
+  } catch {}
+
+  return { type: 'none' };
+}
+
+/**
+ * Publica un único comentario dentro de la pestaña dedicada del post
+ * EN SEGUNDO PLANO, manejando caminos alternos (contingencias, alertas de bloqueo/mención
+ * o congelamiento del DOM) sin detener el bot.
+ */
+async function publicarUnComentarioEnPagina(
+  jobPage,
+  commentToSend,
+  selectedUsers,
+  minDelay,
+  maxDelay,
+  shouldCancel
+) {
+  await dismissUnexpectedInstagramAlerts(jobPage);
+
   const commentSelector = [
     'textarea[aria-label*="comentario" i]',
     'textarea[aria-label*="comment" i]',
@@ -697,13 +968,25 @@ async function publicarUnComentarioEnPagina(jobPage, commentToSend, minDelay, ma
     'textarea[placeholder*="comment" i]',
   ].join(', ');
 
-  const commentBox = jobPage.locator(commentSelector).first();
-  const isVisible = await commentBox.isVisible({ timeout: 12000 }).catch(() => false);
+  let commentBox = jobPage.locator(commentSelector).first();
+  let isVisible = await commentBox.isVisible({ timeout: 10000 }).catch(() => false);
 
+  // Contingencia: si la caja de comentarios desapareció por un micro-corte o modal, recargamos la pestaña
   if (!isVisible) {
-    throw new Error(
-      'No se encontró la caja de comentarios. Verifica haber iniciado sesión y que el post permita comentarios.'
-    );
+    console.warn('🔄 [Contingencia] Caja de comentarios no visible. Recargando pestaña del post...');
+    await jobPage.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    await jobPage.waitForTimeout(2500);
+    await dismissCookiesModal(jobPage);
+    await dismissPostLoginModals(jobPage);
+    await dismissUnexpectedInstagramAlerts(jobPage);
+
+    commentBox = jobPage.locator(commentSelector).first();
+    isVisible = await commentBox.isVisible({ timeout: 10000 }).catch(() => false);
+    if (!isVisible) {
+      throw new Error(
+        'No se encontró la caja de comentarios tras recargar. Verifica que la sesión esté activa y el post permita comentarios.'
+      );
+    }
   }
 
   await commentBox.scrollIntoViewIfNeeded();
@@ -734,15 +1017,27 @@ async function publicarUnComentarioEnPagina(jobPage, commentToSend, minDelay, ma
 
   await jobPage.waitForTimeout(getRandomInt(4500, 6500));
 
-  const rateLimitAlert = jobPage.locator(
-    'text=/Inténtalo de nuevo más tarde|Try Again Later|Restringimos determinadas actividades|We restrict certain activity|No se pudo publicar el comentario|Couldn\'t post comment/i'
-  ).first();
+  // Inspeccionar si salió alguna alerta de bloqueo/restricción de mención o error
+  const alertResult = await inspectAndDismissPublishAlert(jobPage, selectedUsers);
 
-  if (await rateLimitAlert.isVisible({ timeout: 1200 }).catch(() => false)) {
-    throw new Error(
-      'Instagram mostró un aviso de límite de frecuencia ("Inténtalo de nuevo más tarde"). Se detuvo el envío en este post por seguridad.'
-    );
+  if (alertResult.type !== 'none') {
+    // Limpiar el textarea por si el comentario fallido quedó escrito adentro
+    await activeCommentBox.fill('').catch(() => {});
+    return alertResult;
   }
+
+  // Verificar además si el texto quedó atrapado en el textarea sin enviarse (fallo silencioso de mención)
+  const remainingValue = await activeCommentBox.inputValue().catch(() => '');
+  if (remainingValue && remainingValue.trim().length > 0) {
+    await activeCommentBox.fill('').catch(() => {});
+    return {
+      type: 'mention_blocked',
+      alertText: 'El comentario no se envió (posible mención restringida o bloqueada)',
+      explicitUsers: [],
+    };
+  }
+
+  return { type: 'none' };
 }
 
 /**
@@ -750,9 +1045,12 @@ async function publicarUnComentarioEnPagina(jobPage, commentToSend, minDelay, ma
  * coordinándose automáticamente con otros posts activos.
  */
 function crearYEjecutarTareaPost(context, config) {
+  const savedGroups = loadSavedUsersGroups();
   const {
     postUrl,
-    users = [],
+    frequentUsers = savedGroups.frequentUsers,
+    occasionalUsers = savedGroups.occasionalUsers,
+    cooldownTurns = 4,
     baseComment = '',
     tagsPerComment = 0,
     totalComments = 100,
@@ -772,6 +1070,7 @@ function crearYEjecutarTareaPost(context, config) {
     throw new Error('La URL no es válida. Debe ser un enlace de post o reel (ej. https://www.instagram.com/p/XXXX/).');
   }
 
+  const totalUniqueUsersCount = new Set([...frequentUsers, ...occasionalUsers]).size;
   const postKey = normalizePostKey(postUrl);
   const initialMyCount = ANALYTICS.myCommentsByPost[postKey] || 0;
 
@@ -781,6 +1080,7 @@ function crearYEjecutarTareaPost(context, config) {
       baseComment,
       tagsPerComment,
       totalComments,
+      cooldownTurns,
       antiDuplicate,
       allowEmojis,
       minDelay,
@@ -800,7 +1100,7 @@ function crearYEjecutarTareaPost(context, config) {
     postKey,
     baseComment,
     tagsPerComment,
-    usersCount: users.length,
+    usersCount: totalUniqueUsersCount,
     running: true,
     cancelRequested: false,
     completed: 0,
@@ -882,42 +1182,138 @@ function crearYEjecutarTareaPost(context, config) {
 
       let lastCombinationKey = '';
       const usedCommentsSet = new Set();
+      const recentTurnMap = new Map();
+      const suspicionStrikesMap = new Map();
+      let consecutiveRateLimits = 0;
 
       for (let i = 1; i <= totalComments; i++) {
         if (job.cancelRequested) {
           throw new Error('Envío detenido manualmente por el usuario.');
         }
 
-        const { commentText: commentToSend, combinationKey, selectedUsers } = buildUniqueGiveawayComment({
-          users,
-          tagsPerComment,
-          baseComment,
-          antiDuplicate,
-          allowEmojis,
-          usedSet: usedCommentsSet,
-          lastKey: lastCombinationKey,
-          commentIndex: i,
-        });
-        lastCombinationKey = combinationKey;
+        let publishedSuccessfully = false;
+        let finalCommentSent = '';
+        let finalSelectedUsers = [];
+        const excludedInTurn = new Set();
 
-        job.phaseMessage = `⏳ Esperando turno de escritura para comentario #${i}/${totalComments}...`;
+        // Hasta 3 intentos por turno en caso de que algún usuario haya bloqueado/restringido menciones
+        for (let retry = 0; retry < 3 && !publishedSuccessfully; retry++) {
+          const liveGroups = loadSavedUsersGroups();
+          const activeFrequent = liveGroups.frequentUsers.length > 0 ? liveGroups.frequentUsers : frequentUsers;
+          const activeOccasional = liveGroups.occasionalUsers.length > 0 ? liveGroups.occasionalUsers : occasionalUsers;
+          const activePenalized = liveGroups.penalizedUsers || {};
 
-        // Adquirir turno exclusivo de teclado para escribir y publicar sin solaparse con otro post
-        await acquireTypingTurn(job, async () => {
-          job.phaseMessage = `✍️ Escribiendo #${i}/${totalComments}: "${commentToSend}"`;
-          console.log(`\n✍️ [Post #${jobId} — ${i}/${totalComments}] Escribiendo: "${commentToSend}"`);
+          const { commentText: commentToSend, combinationKey, selectedUsers } = buildUniqueGiveawayComment({
+            frequentUsers: activeFrequent,
+            occasionalUsers: activeOccasional,
+            penalizedUsers: activePenalized,
+            recentTurnMap,
+            cooldownTurns,
+            excludedInTurn,
+            tagsPerComment,
+            baseComment,
+            antiDuplicate,
+            allowEmojis,
+            usedSet: usedCommentsSet,
+            lastKey: lastCombinationKey,
+            commentIndex: i,
+          });
 
-          await publicarUnComentarioEnPagina(
-            jobPage,
-            commentToSend,
-            minDelay,
-            maxDelay,
-            () => job.cancelRequested
+          job.phaseMessage = `⏳ Esperando turno de escritura para comentario #${i}/${totalComments}...`;
+
+          let publishOutcome = { type: 'none' };
+
+          // Adquirir turno exclusivo de teclado para escribir y publicar sin solaparse con otro post
+          await acquireTypingTurn(job, async () => {
+            job.phaseMessage = `✍️ Escribiendo #${i}/${totalComments}: "${commentToSend}"`;
+            console.log(`\n✍️ [Post #${jobId} — ${i}/${totalComments}] Escribiendo: "${commentToSend}"`);
+
+            publishOutcome = await publicarUnComentarioEnPagina(
+              jobPage,
+              commentToSend,
+              selectedUsers,
+              minDelay,
+              maxDelay,
+              () => job.cancelRequested
+            );
+          });
+
+          if (publishOutcome.type === 'none') {
+            publishedSuccessfully = true;
+            finalCommentSent = commentToSend;
+            finalSelectedUsers = selectedUsers;
+            lastCombinationKey = combinationKey;
+            consecutiveRateLimits = 0;
+
+            // Actualizar el turno en que cada usuario fue etiquetado (para el Cooldown de Ocasionales)
+            for (const u of selectedUsers) {
+              recentTurnMap.set(normalizeHandle(u), i);
+            }
+          } else if (
+            publishOutcome.type === 'mention_blocked' ||
+            publishOutcome.type === 'generic_post_fail'
+          ) {
+            console.warn(
+              `⚠️ [Post #${jobId}] Contingencia detectada al etiquetar (${selectedUsers.join(', ')}): ${publishOutcome.alertText}`
+            );
+
+            // Identificar quién provocó la alerta y moverlo a Ocasionales con peso mínimo (sin borrarlo)
+            if (publishOutcome.explicitUsers && publishOutcome.explicitUsers.length > 0) {
+              for (const culprit of publishOutcome.explicitUsers) {
+                demoteUserToOccasionalMinWeight(culprit, publishOutcome.alertText);
+                excludedInTurn.add(normalizeHandle(culprit));
+              }
+            } else if (selectedUsers.length === 1) {
+              demoteUserToOccasionalMinWeight(selectedUsers[0], publishOutcome.alertText);
+              excludedInTurn.add(normalizeHandle(selectedUsers[0]));
+            } else {
+              for (const candidateUser of selectedUsers) {
+                const normU = normalizeHandle(candidateUser);
+                const strikes = (suspicionStrikesMap.get(normU) || 0) + 1;
+                suspicionStrikesMap.set(normU, strikes);
+                excludedInTurn.add(normU);
+
+                if (strikes >= 2) {
+                  demoteUserToOccasionalMinWeight(
+                    normU,
+                    'Restricción/bloqueo confirmado tras 2 fallos de mención'
+                  );
+                }
+              }
+            }
+
+            job.phaseMessage = `🛡️ Alerta de mención sorteada. Reintentando comentario #${i} con otros usuarios...`;
+            await jobPage.waitForTimeout(2500);
+          } else if (publishOutcome.type === 'rate_limit') {
+            consecutiveRateLimits += 1;
+            if (consecutiveRateLimits >= 3) {
+              throw new Error(
+                'Instagram mantuvo el aviso de límite de frecuencia tras 3 pausas seguidas. Se detuvo por seguridad.'
+              );
+            }
+            const recoverySec = getRandomInt(300, 420); // 5 a 7 minutos de enfriamiento de emergencia
+            console.warn(
+              `🛡️ [Post #${jobId}] Aviso temporal de frecuencia detectado. Aplicando enfriamiento de emergencia de ${Math.round(
+                recoverySec / 60
+              )} min antes de reintentar...`
+            );
+            await sleepJobWithCountdown(
+              job,
+              recoverySec,
+              `🛡️ Enfriamiento automático tras alerta temporal de IG`
+            );
+          }
+        }
+
+        if (!publishedSuccessfully) {
+          console.warn(
+            `⚠️ [Post #${jobId}] No se pudo publicar el turno #${i} tras 3 intentos de contingencia. Pasando al siguiente turno...`
           );
-        });
+          continue;
+        }
 
         job.completed = i;
-        recordCommentAnalytics(selectedUsers, postUrl);
+        recordCommentAnalytics(finalSelectedUsers, postUrl);
         job.myTotalInPost = ANALYTICS.myCommentsByPost[postKey] || job.completed;
 
         if (job.postTotalComments !== null) {
@@ -940,7 +1336,7 @@ function crearYEjecutarTareaPost(context, config) {
           jobId,
           index: i,
           time: new Date().toLocaleTimeString(),
-          comment: commentToSend,
+          comment: finalCommentSent,
           postShort: postUrl.replace(/^https?:\/\/(www\.)?instagram\.com/i, ''),
         });
 
@@ -1051,6 +1447,7 @@ function startControlServer({
               initialComment,
               hasSession: fs.existsSync(CONFIG.sessionFile),
               savedUsers: loadSavedUsers(),
+              userGroups: loadSavedUsersGroups(),
             })
           );
           return;
@@ -1061,12 +1458,37 @@ function startControlServer({
           req.on('data', (chunk) => { body += chunk; });
           req.on('end', () => {
             try {
-              const { users } = JSON.parse(body || '{}');
-              if (Array.isArray(users)) {
-                saveUsersToDisk(users);
-              }
+              const payload = JSON.parse(body || '{}');
+              const saved = saveUsersGroupsToDisk({
+                frequentUsers: payload.frequentUsers,
+                occasionalUsers: payload.occasionalUsers,
+                penalizedUsers: payload.penalizedUsers,
+              });
               res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ ok: true }));
+              res.end(JSON.stringify({ ok: true, userGroups: saved }));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: false, error: err.message }));
+            }
+          });
+          return;
+        }
+
+        if (req.method === 'POST' && req.url === '/api/clear-penalty') {
+          let body = '';
+          req.on('data', (chunk) => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const { username } = JSON.parse(body || '{}');
+              const groups = loadSavedUsersGroups();
+              if (username) {
+                delete groups.penalizedUsers[normalizeHandle(username)];
+              } else {
+                groups.penalizedUsers = {};
+              }
+              saveUsersGroupsToDisk(groups);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true, userGroups: groups }));
             } catch (err) {
               res.writeHead(400, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ ok: false, error: err.message }));
@@ -1101,6 +1523,7 @@ function startControlServer({
               logs: GLOBAL_LOGS,
               analytics: ANALYTICS,
               savedUsers: loadSavedUsers(),
+              userGroups: loadSavedUsersGroups(),
             })
           );
           return;
