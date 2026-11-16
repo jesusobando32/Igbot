@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Instagram Multi-Post Bot — Panel de Control</title>
+  <title>Instagram Multi-Post & Multi-Account Bot — Panel de Control</title>
   <style>
     :root {
       --bg: #0f1117;
@@ -32,16 +32,16 @@
       display: flex;
       justify-content: center;
       align-items: flex-start;
-      padding: 24px 16px;
+      padding: 22px 14px;
     }
 
     .container {
       width: 100%;
-      max-width: 900px;
+      max-width: 980px;
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 26px;
+      padding: 24px;
       box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
     }
 
@@ -66,7 +66,7 @@
 
     .title-group p {
       color: var(--muted);
-      font-size: 0.86rem;
+      font-size: 0.84rem;
       margin-top: 4px;
     }
 
@@ -89,78 +89,59 @@
       border-color: rgba(245, 158, 11, 0.35);
     }
 
-    .login-banner {
-      background: rgba(245, 158, 11, 0.1);
-      border: 1px solid rgba(245, 158, 11, 0.35);
-      border-radius: 12px;
-      padding: 12px 15px;
-      margin-bottom: 18px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
-    .login-banner p {
-      font-size: 0.84rem;
-      color: #fde68a;
-      line-height: 1.4;
-      flex: 1;
-      min-width: 240px;
-    }
-
-    .login-banner-actions {
-      display: flex;
-      gap: 8px;
-    }
-
-    .form-group {
-      margin-bottom: 16px;
-    }
-
     label {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 0.86rem;
+      font-size: 0.84rem;
       font-weight: 600;
       margin-bottom: 6px;
       color: #e2e8f0;
     }
 
     .hint {
-      font-size: 0.76rem;
+      font-size: 0.75rem;
       color: var(--muted);
       font-weight: 400;
     }
 
     input[type="text"],
     input[type="number"],
+    input[type="datetime-local"],
+    input[type="password"],
+    select,
     textarea {
       width: 100%;
       background: #0f1117;
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 10px 12px;
+      padding: 9px 12px;
       color: var(--text);
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       outline: none;
       transition: border-color 0.2s;
     }
 
     input:focus,
+    select:focus,
     textarea:focus {
       border-color: var(--accent);
     }
 
     textarea {
-      min-height: 92px;
+      min-height: 88px;
       resize: vertical;
       line-height: 1.45;
     }
 
-    /* Bloques de Posts a lanzar */
+    .panel-box {
+      background: #12151c;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+    }
+
     .posts-builder {
       display: flex;
       flex-direction: column;
@@ -180,6 +161,8 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 10px;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     .post-entry-title {
@@ -190,12 +173,12 @@
 
     .post-entry-grid {
       display: grid;
-      grid-template-columns: 1.5fr 1.2fr 0.55fr 0.55fr;
+      grid-template-columns: 1.5fr 1.1fr 0.45fr 0.45fr 0.9fr;
       gap: 10px;
       align-items: start;
     }
 
-    @media (max-width: 760px) {
+    @media (max-width: 820px) {
       .post-entry-grid {
         grid-template-columns: 1fr;
       }
@@ -207,6 +190,13 @@
       color: #38bdf8;
     }
 
+    .rules-detected-line {
+      margin-top: 6px;
+      font-size: 0.8rem;
+      color: #fbbf24;
+      display: none;
+    }
+
     .settings-section-title {
       font-size: 0.8rem;
       font-weight: 700;
@@ -214,28 +204,28 @@
       letter-spacing: 0.05em;
       color: var(--muted);
       margin-bottom: 8px;
-      margin-top: 16px;
+      margin-top: 14px;
     }
 
     .settings-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
       background: #12151c;
       border: 1px solid var(--border);
-      padding: 14px;
+      padding: 13px;
       border-radius: 10px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
 
-    @media (max-width: 680px) {
+    @media (max-width: 760px) {
       .settings-grid {
         grid-template-columns: repeat(2, 1fr);
       }
     }
 
     .settings-grid label {
-      font-size: 0.75rem;
+      font-size: 0.74rem;
       color: var(--muted);
       margin-bottom: 5px;
     }
@@ -250,14 +240,14 @@
       cursor: pointer;
       border: none;
       border-radius: 10px;
-      padding: 11px 16px;
-      font-size: 0.9rem;
+      padding: 10px 15px;
+      font-size: 0.88rem;
       font-weight: 600;
       transition: all 0.2s;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 7px;
     }
 
     .btn-primary {
@@ -276,7 +266,7 @@
       color: var(--text);
       border: 1px solid var(--border);
       padding: 8px 12px;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
     }
 
     .btn-secondary:hover {
@@ -288,7 +278,7 @@
       color: #34d399;
       border: 1px solid rgba(16, 185, 129, 0.4);
       padding: 8px 12px;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
     }
 
     .btn-danger {
@@ -296,7 +286,7 @@
       color: #f87171;
       border: 1px solid rgba(239, 68, 68, 0.3);
       padding: 8px 12px;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
     }
 
     .status-box {
@@ -453,14 +443,25 @@
       justify-content: space-between;
       gap: 10px;
     }
+
+    .account-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #181b23;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 7px 11px;
+      font-size: 0.8rem;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
       <div class="title-group">
-        <h1>Instagram Multi-Post Recurrent Bot</h1>
-        <p>Solo ejecutas "node comentar.js" una vez y desde esta ventana lanzas uno o varios posts a la vez</p>
+        <h1>Instagram Multi-Post & Multi-Account Pro Bot</h1>
+        <p>Auto-detector de reglas y fecha de cierre • Modo Francotirador • Multicuentas • Control por Telegram • Segundo Plano</p>
       </div>
       <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
         <button type="button" class="btn-primary" id="openDashboardBtn" style="padding: 8px 14px; font-size: 0.83rem;">
@@ -470,22 +471,11 @@
       </div>
     </div>
 
-    <div class="login-banner">
-      <p>
-        💡 <strong>¿Necesitas completar login, 2FA o verificación manual?</strong><br />
-        Hazlo en la pestaña de Instagram y luego pulsa <strong>"Guardar Sesión"</strong>.
-      </p>
-      <div class="login-banner-actions">
-        <button type="button" class="btn-secondary" id="goIgTopBtn">👁️ Ir a Instagram</button>
-        <button type="button" class="btn-success" id="saveSessionBtn">💾 Guardar Sesión</button>
-      </div>
-    </div>
-
     <!-- Estadísticas Globales y Ranking de Usuarios Más Etiquetados -->
-    <div style="background: #12151c; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px;">
+    <div class="panel-box">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
         <span style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8;">
-          📊 Analíticas Globales y Ranking de Etiquetados
+          📊 Analíticas Globales y Probabilidad en Vivo
         </span>
         <button type="button" class="btn-secondary" id="resetStatsBtn" style="padding: 4px 10px; font-size: 0.74rem;">
           🔄 Reiniciar Contador
@@ -516,8 +506,52 @@
       </div>
     </div>
 
+    <!-- Gestor Visual de Multicuentas + Control por Telegram -->
+    <div style="display: grid; grid-template-columns: 1.15fr 1fr; gap: 14px; margin-bottom: 16px;">
+      <!-- Multicuentas -->
+      <div class="panel-box" style="margin-bottom: 0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+          <span style="font-size: 0.84rem; font-weight: 700; color: #a78bfa;">
+            👤 Gestor de Multicuentas de Instagram
+          </span>
+          <button type="button" class="btn-secondary" id="goIgTopBtn" style="padding: 4px 9px; font-size: 0.74rem;">
+            👁️ Ver IG Principal
+          </button>
+        </div>
+        <div id="accountsListContainer" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;"></div>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="newAccountLabel" placeholder="Nombre de otra cuenta (ej: Secundaria, Mamá)..." />
+          <button type="button" class="btn-success" id="addAccountBtn" style="white-space: nowrap;">
+            ➕ Agregar Cuenta
+          </button>
+        </div>
+      </div>
+
+      <!-- Notificaciones y Control Remoto por Telegram -->
+      <div class="panel-box" style="margin-bottom: 0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 0.84rem; font-weight: 700; color: #38bdf8;">
+            📱 Control desde el Teléfono (Telegram)
+          </span>
+          <label style="margin: 0; font-size: 0.76rem; color: #34d399; cursor: pointer;">
+            <input type="checkbox" id="tgEnabled" style="margin-right: 5px;" /> Activo
+          </label>
+        </div>
+        <div style="display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 8px; margin-bottom: 8px;">
+          <input type="password" id="tgBotToken" placeholder="Bot Token (de @BotFather)" />
+          <input type="text" id="tgChatId" placeholder="Tu Chat ID" />
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+          <span class="hint">Envía un link de IG al bot desde tu celular para iniciarlo remoto</span>
+          <button type="button" class="btn-secondary" id="saveTelegramBtn" style="white-space: nowrap; padding: 6px 11px;">
+            💾 Guardar y Probar
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Dos Secciones de Usuarios Guardados: Frecuentes (5x) vs Ocasionales (1x + Cooldown) -->
-    <div style="background: #12151c; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px;">
+    <div class="panel-box">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
         <span style="font-size: 0.85rem; font-weight: 700; color: #f8fafc;">
           👥 Selección Ponderada de Usuarios (<span id="userCountBadge">7 usuarios totales</span>)
@@ -535,7 +569,7 @@
           </label>
           <textarea
             id="frequentUsersList"
-            placeholder="Cuentas tuyas, mamá o amigos de confianza que no importa etiquetar seguido..."
+            placeholder="Cuentas tuyas, mamá o amigos de confianza..."
           ></textarea>
         </div>
 
@@ -560,8 +594,8 @@
     </div>
 
     <!-- Constructor de 1 o varios Posts para lanzar de una vez -->
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-      <span class="settings-section-title" style="margin: 0;">📌 Configura el Post (o añade varios para lanzarlos de una vez)</span>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+      <span class="settings-section-title" style="margin: 0;">📌 Configura el Sorteo (Detección de Reglas + Modo Francotirador Horario)</span>
       <button type="button" class="btn-secondary" id="addPostRowBtn">
         ➕ Añadir otro Post al formulario
       </button>
@@ -569,9 +603,16 @@
 
     <div class="posts-builder" id="postsBuilder"></div>
 
-    <!-- Tiempos Anti-Spam Globales -->
-    <div class="settings-section-title">🛡️ Tiempos Anti-Spam (Intercalado Automático entre Posts)</div>
+    <!-- Tiempos Anti-Spam y Cuenta a Utilizar -->
+    <div class="settings-section-title">🛡️ Cuenta a Usar y Tiempos Anti-Spam</div>
     <div class="settings-grid">
+      <div>
+        <label for="accountSelect">👤 ¿Con qué cuenta comentar?</label>
+        <select id="accountSelect">
+          <option value="principal">Cuenta Principal</option>
+          <option value="ALL">🔥 TODAS mis cuentas activas a la vez</option>
+        </select>
+      </div>
       <div>
         <label for="typingDelay">⌨️ Delay Tipeo/Letra (ms)</label>
         <input type="text" id="typingDelay" value="65-135" />
@@ -590,27 +631,44 @@
       </div>
     </div>
 
-    <!-- Botones de Acción -->
-    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #f59e0b; margin-bottom: 8px; cursor: pointer;">
-      <input type="checkbox" id="antiDuplicate" checked />
-      🎯 Modo Sorteo Anti-Deduplicación (Alterna el texto al principio, en medio o al final de los @usuarios y evita repetir strings exactos)
-    </label>
+    <!-- Casillas de Inteligencia de Sorteo y Simulación Humana -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px;">
+      <label style="justify-content: flex-start; gap: 8px; font-size: 0.82rem; color: #38bdf8; cursor: pointer;">
+        <input type="checkbox" id="autoDetectRules" checked />
+        🔍 Auto-detectar reglas del sorteo (nº de amigos, palabra clave y si ya cerró o venció la fecha)
+      </label>
 
-    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #cbd5e1; margin-bottom: 8px; cursor: pointer;">
-      <input type="checkbox" id="allowEmojis" checked />
-      ✨ Permitir 1 emoji de variación (separado por espacio) cuando se agoten las combinaciones de texto y amigos
-    </label>
+      <label style="justify-content: flex-start; gap: 8px; font-size: 0.82rem; color: #f472b6; cursor: pointer;">
+        <input type="checkbox" id="autoLikeFollow" checked />
+        ❤️ Dar Like automático al post y seguir al organizador antes de comentar
+      </label>
 
-    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #34d399; margin-bottom: 14px; cursor: pointer;">
-      <input type="checkbox" id="autoMinimize" checked />
-      🗕 Minimizar navegador automáticamente al iniciar (sigue comentando en segundo plano sin interrumpir tu PC)
-    </label>
+      <label style="justify-content: flex-start; gap: 8px; font-size: 0.82rem; color: #a78bfa; cursor: pointer;">
+        <input type="checkbox" id="simulateTypos" checked />
+        ⌨️ Simulación humana avanzada (errores de dedo ocasionales corregidos con Backspace + micro-scrolls)
+      </label>
+
+      <label style="justify-content: flex-start; gap: 8px; font-size: 0.82rem; color: #f59e0b; cursor: pointer;">
+        <input type="checkbox" id="antiDuplicate" checked />
+        🎯 Anti-Deduplicación (Alterna el texto al principio/medio/final + variación única)
+      </label>
+
+      <label style="justify-content: flex-start; gap: 8px; font-size: 0.82rem; color: #cbd5e1; cursor: pointer;">
+        <input type="checkbox" id="allowEmojis" checked />
+        ✨ Permitir 1 emoji separado por espacio al agotarse las combinaciones
+      </label>
+
+      <label style="justify-content: flex-start; gap: 8px; font-size: 0.82rem; color: #34d399; cursor: pointer;">
+        <input type="checkbox" id="autoMinimize" checked />
+        🗕 Minimizar navegador automáticamente al iniciar (trabajar en segundo plano)
+      </label>
+    </div>
 
     <div class="actions">
       <button type="button" class="btn-primary" id="submitBtn">
-        🚀 Iniciar Post(s) Configurados Ahora
+        🚀 Iniciar / Programar Post(s) Ahora
       </button>
-      <button type="button" class="btn-secondary" id="minimizeBtn" title="Minimizar navegador a la barra de tareas">
+      <button type="button" class="btn-secondary" id="minimizeBtn">
         🗕 Minimizar Ventana
       </button>
       <button type="button" class="btn-danger" id="closeBtn">
@@ -623,7 +681,7 @@
     <!-- Lista de Posts Activos en Paralelo -->
     <div class="tasks-section">
       <div class="tasks-header">
-        <h3>📋 Posts Ejecutándose en Paralelo</h3>
+        <h3>📋 Posts Ejecutándose o Programados en Modo Francotirador</h3>
         <button type="button" class="btn-danger" id="stopAllBtn" style="display: none;">
           ⏹️ Detener Todos los Posts
         </button>
@@ -657,6 +715,16 @@
     const postsBuilder = document.getElementById('postsBuilder');
     const addPostRowBtn = document.getElementById('addPostRowBtn');
 
+    const accountsListContainer = document.getElementById('accountsListContainer');
+    const newAccountLabelInput = document.getElementById('newAccountLabel');
+    const addAccountBtn = document.getElementById('addAccountBtn');
+    const accountSelect = document.getElementById('accountSelect');
+
+    const tgEnabledInput = document.getElementById('tgEnabled');
+    const tgBotTokenInput = document.getElementById('tgBotToken');
+    const tgChatIdInput = document.getElementById('tgChatId');
+    const saveTelegramBtn = document.getElementById('saveTelegramBtn');
+
     const typingDelayInput = document.getElementById('typingDelay');
     const intervalSecInput = document.getElementById('intervalSec');
     const batchSizeInput = document.getElementById('batchSize');
@@ -665,7 +733,6 @@
     const submitBtn = document.getElementById('submitBtn');
     const stopAllBtn = document.getElementById('stopAllBtn');
     const goIgTopBtn = document.getElementById('goIgTopBtn');
-    const saveSessionBtn = document.getElementById('saveSessionBtn');
     const closeBtn = document.getElementById('closeBtn');
     const statusBox = document.getElementById('statusBox');
     const sessionBadge = document.getElementById('sessionBadge');
@@ -675,7 +742,6 @@
 
     let statusPollTimer = null;
     let renderedLogCount = 0;
-    let rowCounter = 0;
 
     function parseUsers(rawText) {
       if (!rawText) return [];
@@ -706,18 +772,135 @@
       return [defaultMin, defaultMax];
     }
 
+    function renderAccountsManager(accounts = []) {
+      const currentVal = accountSelect.value || 'principal';
+      accountSelect.innerHTML =
+        accounts
+          .map((a) => `<option value="${a.id}">${a.hasSession ? '🟢' : '🟡'} ${a.label}</option>`)
+          .join('') +
+        `<option value="ALL">🔥 TODAS mis cuentas activas a la vez (${accounts.filter((a) => a.hasSession).length})</option>`;
+
+      if ([...accountSelect.options].some((o) => o.value === currentVal)) {
+        accountSelect.value = currentVal;
+      }
+
+      accountsListContainer.innerHTML = accounts
+        .map(
+          (acc) => `
+          <div class="account-pill">
+            <span>${acc.hasSession ? '🟢' : '🟡'} <strong>${acc.label}</strong></span>
+            <button type="button" class="btn-success" style="padding: 3px 8px; font-size: 0.72rem;" onclick="saveAccSession('${acc.id}')">
+              💾 Guardar Sesión
+            </button>
+            ${
+              acc.id !== 'principal'
+                ? `<button type="button" class="btn-danger" style="padding: 3px 7px; font-size: 0.72rem;" onclick="deleteAcc('${acc.id}')">✖</button>`
+                : ''
+            }
+          </div>
+        `
+        )
+        .join('');
+    }
+
+    window.saveAccSession = async (accountId) => {
+      const res = await fetch('/api/accounts/save-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        renderAccountsManager(data.accounts);
+        updateBadge(true);
+        showStatus('success', '💾 ¡Sesión de la cuenta guardada exitosamente!');
+      }
+    };
+
+    window.deleteAcc = async (accountId) => {
+      const res = await fetch('/api/accounts/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        renderAccountsManager(data.accounts);
+      }
+    };
+
+    addAccountBtn.addEventListener('click', async () => {
+      const label = newAccountLabelInput.value.trim();
+      if (!label) {
+        showStatus('error', '⚠️ Escribe un nombre para identificar tu cuenta (ej: Secundaria).');
+        newAccountLabelInput.focus();
+        return;
+      }
+      addAccountBtn.disabled = true;
+      try {
+        const res = await fetch('/api/accounts/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          newAccountLabelInput.value = '';
+          renderAccountsManager(data.accounts);
+          showStatus(
+            'info',
+            `🔑 Se abrió una pestaña de Instagram para "${data.label}". Inicia sesión ahí y luego pulsa "💾 Guardar Sesión".`
+          );
+        }
+      } catch (err) {
+        showStatus('error', '⚠️ Error al agregar cuenta: ' + err.message);
+      } finally {
+        addAccountBtn.disabled = false;
+      }
+    });
+
+    saveTelegramBtn.addEventListener('click', async () => {
+      saveTelegramBtn.disabled = true;
+      try {
+        const res = await fetch('/api/telegram/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            botToken: tgBotTokenInput.value.trim(),
+            chatId: tgChatIdInput.value.trim(),
+            enabled: tgEnabledInput.checked,
+            sendTest: Boolean(tgBotTokenInput.value.trim() && tgChatIdInput.value.trim()),
+          }),
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          showStatus('success', '📲 ¡Configuración de Telegram guardada y mensaje de prueba enviado a tu teléfono!');
+        } else {
+          showStatus('error', '⚠️ Telegram: ' + (data.error || 'Verifica tu Bot Token y Chat ID.'));
+        }
+      } catch (err) {
+        showStatus('error', '⚠️ Error: ' + err.message);
+      } finally {
+        saveTelegramBtn.disabled = false;
+      }
+    });
+
     function createPostEntryRow(initialUrl = '', initialMsg = '', initialTags = 2, initialTotal = 100) {
-      rowCounter++;
       const div = document.createElement('div');
       div.className = 'post-entry';
       div.innerHTML = `
         <div class="post-entry-header">
-          <span class="post-entry-title">📌 Post a Comentar</span>
-          ${
-            postsBuilder.children.length > 0
-              ? `<button type="button" class="btn-danger remove-row-btn" style="padding: 4px 10px; font-size: 0.75rem;">✖ Quitar</button>`
-              : ''
-          }
+          <span class="post-entry-title">📌 Sorteo a Comentar</span>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" class="btn-secondary analyze-row-btn" style="padding: 4px 10px; font-size: 0.75rem;">
+              🔍 Analizar Reglas y Fecha del Post
+            </button>
+            ${
+              postsBuilder.children.length > 0
+                ? `<button type="button" class="btn-danger remove-row-btn" style="padding: 4px 10px; font-size: 0.75rem;">✖ Quitar</button>`
+                : ''
+            }
+          </div>
         </div>
         <div class="post-entry-grid">
           <div>
@@ -725,18 +908,23 @@
             <input type="text" class="row-url" placeholder="https://www.instagram.com/p/XXXX/" value="${initialUrl}" />
           </div>
           <div>
-            <label>💬 Mensaje (Vacío = solo @usuarios)</label>
-            <input type="text" class="row-msg" placeholder="Opcional: escribe mensaje o déjalo vacío" value="${initialMsg}" />
+            <label>💬 Mensaje (Opcional o separa con |)</label>
+            <input type="text" class="row-msg" placeholder="Vacío = solo @usuarios" value="${initialMsg}" />
           </div>
           <div>
-            <label>👤 ¿Cuántos etiquetar?</label>
+            <label>👤 Etiquetar</label>
             <input type="number" class="row-tags" value="${initialTags}" min="0" max="20" />
           </div>
           <div>
-            <label>🔁 Total Mensajes</label>
+            <label>🔁 Total Msjs</label>
             <input type="number" class="row-total" value="${initialTotal}" min="1" max="500" />
           </div>
+          <div>
+            <label title="Opcional: déjalo vacío para iniciar ya, o elige fecha/hora para Modo Francotirador">🎯 Francotirador (Opcional)</label>
+            <input type="datetime-local" class="row-schedule" />
+          </div>
         </div>
+        <div class="rules-detected-line"></div>
         <div class="preview-line"></div>
       `;
 
@@ -747,6 +935,55 @@
           updateAllPreviews();
         });
       }
+
+      const analyzeBtn = div.querySelector('.analyze-row-btn');
+      const rulesLine = div.querySelector('.rules-detected-line');
+      analyzeBtn.addEventListener('click', async () => {
+        const postUrl = div.querySelector('.row-url').value.trim();
+        if (!postUrl) {
+          showStatus('error', '⚠️ Pega primero el link del post para analizar sus reglas.');
+          return;
+        }
+        analyzeBtn.disabled = true;
+        analyzeBtn.textContent = '⏳ Analizando...';
+        rulesLine.style.display = 'block';
+        rulesLine.textContent = '🔍 Leyendo descripción del sorteo en Instagram...';
+
+        try {
+          const res = await fetch('/api/analyze-post', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ postUrl }),
+          });
+          const data = await res.json();
+          if (data.ok && data.analysis) {
+            const a = data.analysis;
+            if (a.detectedTagsCount !== null) {
+              div.querySelector('.row-tags').value = a.detectedTagsCount;
+            }
+            if (a.detectedKeyword && !div.querySelector('.row-msg').value.trim()) {
+              div.querySelector('.row-msg').value = a.detectedKeyword;
+            }
+            updateAllPreviews();
+
+            const parts = [];
+            if (a.summary && a.summary.length > 0) parts.push(...a.summary);
+            if (a.postTotalComments) parts.push(`💬 ${a.postTotalComments.toLocaleString()} comentarios actuales`);
+            rulesLine.style.color = a.isClosed ? '#f87171' : '#34d399';
+            rulesLine.textContent =
+              parts.length > 0
+                ? `✅ Reglas detectadas: ${parts.join(' • ')}`
+                : 'ℹ️ No se detectaron restricciones especiales en el texto (listo para comentar).';
+          } else {
+            rulesLine.textContent = '⚠️ No se pudo leer el post: ' + (data.error || '');
+          }
+        } catch (err) {
+          rulesLine.textContent = '⚠️ Error al analizar: ' + err.message;
+        } finally {
+          analyzeBtn.disabled = false;
+          analyzeBtn.textContent = '🔍 Analizar Reglas y Fecha del Post';
+        }
+      });
 
       div.querySelectorAll('input').forEach((inp) => {
         inp.addEventListener('input', updateAllPreviews);
@@ -779,7 +1016,6 @@
         const tagsCount = Math.max(0, parseInt(row.querySelector('.row-tags').value, 10) || 0);
         const previewEl = row.querySelector('.preview-line');
 
-        // Simular muestreo con preferencia a frecuentes en la vista previa
         const weightedPool = [
           ...frequentUsers,
           ...frequentUsers,
@@ -827,10 +1063,10 @@
     function updateBadge(hasSession) {
       if (hasSession) {
         sessionBadge.className = 'badge';
-        sessionBadge.textContent = '● Sesión Guardada (sesion_ig.json)';
+        sessionBadge.textContent = '● Sesión Activa';
       } else {
         sessionBadge.className = 'badge pending';
-        sessionBadge.textContent = '● Completa el login en la pestaña de Instagram';
+        sessionBadge.textContent = '● Completa el login en Instagram';
       }
     }
 
@@ -839,7 +1075,7 @@
       const li = document.createElement('li');
       li.className = 'history-item';
       li.innerHTML = `
-        <span>✅ <strong>[Post #${item.jobId}] #${item.index} (${item.time})</strong> — "${item.comment.replace(/</g, '&lt;')}"</span>
+        <span>✅ <strong>[Post #${item.jobId} • ${item.accountLabel || 'Principal'}] #${item.index} (${item.time})</strong> — "${item.comment.replace(/</g, '&lt;')}"</span>
         <span style="color: var(--muted);">${item.postShort}</span>
       `;
       historyList.prepend(li);
@@ -887,7 +1123,7 @@
             <div class="task-card ${job.running ? 'running' : ''}">
               <div class="task-top">
                 <div>
-                  <span class="task-title">${job.running ? '🔄' : job.error ? '❌' : '✅'} Post #${job.id}</span>
+                  <span class="task-title">${job.running ? '🔄' : job.error ? '❌' : '✅'} Post #${job.id} (${job.accountLabel || 'Principal'})</span>
                   <a href="${job.postUrl}" target="_blank" class="task-url">${job.postUrl}</a>
                 </div>
                 <div style="display: flex; gap: 6px; align-items: center;">
@@ -902,12 +1138,13 @@
               </div>
               <div class="task-meta">
                 💬 Mensaje: <strong>${msgDesc}</strong> &nbsp;|&nbsp; 👤 Etiquetados: <strong>${job.tagsPerComment}</strong>
+                ${job.detectedRulesSummary ? `<br /><span style="color: #fbbf24;">🔍 ${job.detectedRulesSummary}</span>` : ''}
               </div>
               <div class="task-meta" style="color: #38bdf8; background: #181b23; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);">
-                📊 <strong>Comentarios Totales del Post en IG:</strong> ${postTotalTxt} &nbsp;|&nbsp;
-                🎟️ <strong>Tus Boletos aquí:</strong> ${myPostCount} &nbsp;|&nbsp;
+                📊 <strong>Comentarios Totales del Post:</strong> ${postTotalTxt} &nbsp;|&nbsp;
+                🎟️ <strong>Tus Boletos:</strong> ${myPostCount} &nbsp;|&nbsp;
                 📈 <strong>Tu Porcentaje:</strong> ${rawPct}% &nbsp;|&nbsp;
-                🎯 <strong>Probabilidad Real de Ganar:</strong> <span style="color: #34d399; font-weight: 700;">${realPct}%${oneInX}</span>
+                🎯 <strong>Probabilidad Real:</strong> <span style="color: #34d399; font-weight: 700;">${realPct}%${oneInX}</span>
               </div>
               <div class="progress-bar-bg">
                 <div class="progress-bar-fill" style="width: ${pct}%;"></div>
@@ -926,7 +1163,6 @@
       document.getElementById('statSessionCount').textContent = analytics.sessionComments || 0;
       document.getElementById('statTotalCount').textContent = analytics.totalHistoricalComments || 0;
 
-      // Mostrar en el contador global los comentarios del post activo y la probabilidad de ganar
       const statPostTotalEl = document.getElementById('statPostTotal');
       const statWinProbEl = document.getElementById('statWinProb');
       const activeJob = jobs.find((j) => j.running) || jobs[0];
@@ -979,7 +1215,7 @@
         return;
       }
       penalizedBanner.style.display = 'flex';
-      penalizedText.innerHTML = `⚠️ <strong>Movidos automáticamente a Ocasionales con peso mínimo (0.15x) por alerta de mención/bloqueo:</strong> ${pKeys.join(', ')}`;
+      penalizedText.innerHTML = `⚠️ <strong>Movidos automáticamente a Ocasionales con peso mínimo (0.15x) por bloqueo/restricción:</strong> ${pKeys.join(', ')}`;
     }
 
     async function pollStatus() {
@@ -989,6 +1225,7 @@
         renderTasks(data.jobs || []);
         renderAnalytics(data.analytics, data.jobs || []);
         renderPenalizedBanner(data.userGroups);
+        if (data.accounts) renderAccountsManager(data.accounts);
 
         if (Array.isArray(data.logs)) {
           while (renderedLogCount < data.logs.length) {
@@ -1040,6 +1277,14 @@
           occasionalUsersInput.value = (data.userGroups.occasionalUsers || []).join('\n');
           renderPenalizedBanner(data.userGroups);
         }
+        if (data.accounts) {
+          renderAccountsManager(data.accounts);
+        }
+        if (data.telegram) {
+          tgBotTokenInput.value = data.telegram.botToken || '';
+          tgChatIdInput.value = data.telegram.chatId || '';
+          tgEnabledInput.checked = Boolean(data.telegram.enabled);
+        }
 
         const params = new URLSearchParams(window.location.search);
         const loadPostKey = params.get('loadPost');
@@ -1072,7 +1317,6 @@
       } catch {}
     });
 
-    // Guardar cambios en las dos listas de usuarios (Frecuentes y Ocasionales)
     saveUsersBtn.addEventListener('click', async () => {
       const { frequentUsers, occasionalUsers, allUsers } = getBothUserGroups();
       try {
@@ -1096,30 +1340,17 @@
       }
     });
 
-    saveSessionBtn.addEventListener('click', async () => {
-      try {
-        saveSessionBtn.disabled = true;
-        const res = await fetch('/api/save-session', { method: 'POST' });
-        const data = await res.json();
-        if (data.ok) {
-          updateBadge(true);
-          showStatus('success', '💾 ¡Sesión guardada exitosamente en sesion_ig.json!');
-        } else {
-          showStatus('error', '⚠️ No se pudo guardar la sesión: ' + (data.error || ''));
-        }
-      } catch (err) {
-        showStatus('error', '⚠️ Error al guardar sesión: ' + err.message);
-      } finally {
-        saveSessionBtn.disabled = false;
-      }
-    });
-
     submitBtn.addEventListener('click', async () => {
       const { frequentUsers, occasionalUsers, allUsers } = getBothUserGroups();
+      const accountId = accountSelect.value || 'principal';
       const [minDelay, maxDelay] = parseRange(typingDelayInput.value, 65, 135);
       const [minIntervalSec, maxIntervalSec] = parseRange(intervalSecInput.value, 38, 75);
       const batchSize = Math.max(0, parseInt(batchSizeInput.value, 10) || 0);
       const [minBatchPauseMin, maxBatchPauseMin] = parseRange(batchPauseMinInput.value, 4, 7);
+
+      const autoDetectRules = document.getElementById('autoDetectRules').checked;
+      const autoLikeFollow = document.getElementById('autoLikeFollow').checked;
+      const simulateTypos = document.getElementById('simulateTypos').checked;
       const antiDuplicate = document.getElementById('antiDuplicate').checked;
       const allowEmojis = document.getElementById('allowEmojis').checked;
 
@@ -1131,6 +1362,7 @@
         const baseComment = row.querySelector('.row-msg').value.trim();
         const tagsPerComment = Math.max(0, parseInt(row.querySelector('.row-tags').value, 10) || 0);
         const totalComments = Math.max(1, parseInt(row.querySelector('.row-total').value, 10) || 1);
+        const scheduledStartTime = row.querySelector('.row-schedule').value || '';
 
         if (!postUrl) {
           showStatus('error', '⚠️ Por favor pega el link del post o reel en todas las filas agregadas.');
@@ -1146,7 +1378,7 @@
           return;
         }
 
-        if (tagsPerComment === 0 && !baseComment) {
+        if (tagsPerComment === 0 && !baseComment && !autoDetectRules) {
           showStatus(
             'error',
             '⚠️ Si eliges etiquetar 0 usuarios y dejas el mensaje en blanco, el comentario estará vacío.'
@@ -1156,11 +1388,16 @@
 
         payloads.push({
           postUrl,
+          accountId,
           frequentUsers,
           occasionalUsers,
           baseComment,
           tagsPerComment,
           totalComments,
+          scheduledStartTime,
+          autoDetectRules,
+          autoLikeFollow,
+          simulateTypos,
           antiDuplicate,
           allowEmojis,
           minDelay,
@@ -1185,16 +1422,19 @@
           if (!res.ok || !data.ok) {
             throw new Error(data.error || 'No se pudo iniciar uno de los posts.');
           }
-          startedIds.push('#' + data.jobId);
+          if (Array.isArray(data.jobIds)) {
+            startedIds.push(...data.jobIds.map((id) => '#' + id));
+          } else {
+            startedIds.push('#' + data.jobId);
+          }
         }
 
-        // Dejar 1 fila limpia lista por si quiere agregar otro más adelante
         postsBuilder.innerHTML = '';
         createPostEntryRow();
 
         showStatus(
           'success',
-          `🚀 ¡Iniciado(s) Post(s) ${startedIds.join(', ')} en segundo plano! Puedes minimizar la ventana y usar tu PC con normalidad.`
+          `🚀 ¡Tarea(s) ${startedIds.join(', ')} iniciada(s) o programada(s)!`
         );
         pollStatus();
 

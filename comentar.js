@@ -2,15 +2,23 @@ require('dotenv').config({ quiet: true });
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const https = require('https');
 const { chromium } = require('playwright');
 
 // ============================================================================
-// Configuración y Constantes Modificables
+// Configuración y Rutas de Archivos
 // ============================================================================
+const SESSIONS_DIR = path.join(__dirname, 'sesiones');
+if (!fs.existsSync(SESSIONS_DIR)) {
+  fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+}
+
 const CONFIG = {
   sessionFile: path.join(__dirname, 'sesion_ig.json'),
+  sessionsDir: SESSIONS_DIR,
   savedUsersFile: path.join(__dirname, 'usuarios_guardados.json'),
   statsFile: path.join(__dirname, 'estadisticas.json'),
+  panelConfigFile: path.join(__dirname, 'config_panel.json'),
   errorScreenshot: path.join(__dirname, 'error_screenshot.png'),
   panelHtmlFile: path.join(__dirname, 'panel.html'),
   dashboardHtmlFile: path.join(__dirname, 'dashboard.html'),
@@ -30,6 +38,65 @@ const CONFIG = {
   ],
 };
 
+// ============================================================================
+// Persistencia de Configuración del Panel (Multicuentas + Telegram)
+// ============================================================================
+function loadPanelConfig() {
+  const defaultCfg = {
+    accounts: [
+      {
+        id: 'principal',
+        label: 'Cuenta Principal',
+        sessionPath: CONFIG.sessionFile,
+      },
+    ],
+    telegram: {
+      botToken: '',
+      chatId: '',
+      enabled: false,
+    },
+  };
+
+  try {
+    if (fs.existsSync(CONFIG.panelConfigFile)) {
+      const parsed = JSON.parse(fs.readFileSync(CONFIG.panelConfigFile, 'utf8'));
+      const accounts = Array.isArray(parsed.accounts) && parsed.accounts.length > 0
+        ? parsed.accounts
+        : defaultCfg.accounts;
+      // Garantizar que siempre exista la cuenta principal
+      if (!accounts.some((a) => a.id === 'principal')) {
+        accounts.unshift(defaultCfg.accounts[0]);
+      }
+      return {
+        accounts,
+        telegram: { ...defaultCfg.telegram, ...(parsed.telegram || {}) },
+      };
+    }
+  } catch {}
+  return defaultCfg;
+}
+
+function savePanelConfig(cfg) {
+  try {
+    fs.writeFileSync(CONFIG.panelConfigFile, JSON.stringify(cfg, null, 2), 'utf8');
+  } catch {}
+}
+
+let PANEL_CONFIG = loadPanelConfig();
+
+function getAccountStatusList() {
+  PANEL_CONFIG = loadPanelConfig();
+  return PANEL_CONFIG.accounts.map((acc) => ({
+    id: acc.id,
+    label: acc.label,
+    sessionPath: acc.sessionPath,
+    hasSession: fs.existsSync(acc.sessionPath),
+  }));
+}
+
+// ============================================================================
+// Persistencia de Estadísticas y Catálogo/Galería de Posts
+// ============================================================================
 function loadStats() {
   try {
     if (fs.existsSync(CONFIG.statsFile)) {
@@ -51,6 +118,11 @@ function loadStats() {
   return { totalHistoricalComments: 0, tagCounts: {}, myCommentsByPost: {}, postsCatalog: {} };
 }
 
+const ANALYTICS = {
+  sessionComments: 0,
+  ...loadStats(),
+};
+
 function saveStats() {
   try {
     fs.writeFileSync(
@@ -70,11 +142,6 @@ function saveStats() {
   } catch {}
 }
 
-const ANALYTICS = {
-  sessionComments: 0,
-  ...loadStats(),
-};
-
 function normalizePostKey(url) {
   const match = String(url || '').match(/instagram\.com\/(?:p|reel|tv)\/([\w-]+)/i);
   return match ? match[1] : String(url || '').trim();
@@ -92,6 +159,7 @@ function upsertPostInCatalog(postUrl, patch = {}) {
     myComments: ANALYTICS.myCommentsByPost[key] || 0,
     postTotalComments: null,
     probabilities: { rawPercent: 0, estimatedRealPercent: 0, oneInX: null },
+    detectedRules: null,
     savedConfig: {},
     updatedAt: new Date().toISOString(),
   };
@@ -108,16 +176,10 @@ function upsertPostInCatalog(postUrl, patch = {}) {
     updatedAt: new Date().toISOString(),
   };
 
-  // Mantener miniatura previa si el nuevo patch no trae una
-  if (!patch.thumbnail && existing.thumbnail) {
-    merged.thumbnail = existing.thumbnail;
-  }
-  if (!patch.author && existing.author) {
-    merged.author = existing.author;
-  }
-  if (!patch.caption && existing.caption) {
-    merged.caption = existing.caption;
-  }
+  if (!patch.thumbnail && existing.thumbnail) merged.thumbnail = existing.thumbnail;
+  if (!patch.author && existing.author) merged.author = existing.author;
+  if (!patch.caption && existing.caption) merged.caption = existing.caption;
+  if (!patch.detectedRules && existing.detectedRules) merged.detectedRules = existing.detectedRules;
 
   ANALYTICS.postsCatalog[key] = merged;
   saveStats();
@@ -154,6 +216,9 @@ function resetAnalytics() {
   saveStats();
 }
 
+// ============================================================================
+// Persistencia de Usuarios (2 Grupos: Frecuentes 5x vs Ocasionales 1x + Cooldown)
+// ============================================================================
 function normalizeHandle(raw) {
   const clean = String(raw || '').trim().replace(/\s+/g, '');
   if (!clean) return '';
@@ -216,11 +281,6 @@ function saveUsersGroupsToDisk(groups) {
   return dataToSave;
 }
 
-/**
- * Mueve automáticamente a un usuario del Grupo Frecuente al Grupo Ocasional
- * con peso mínimo (0.15) cuando Instagram reporta bloqueo o restricción de mención,
- * sin eliminarlo de la lista.
- */
 function demoteUserToOccasionalMinWeight(rawUser, reason = 'Restricción/bloqueo detectado en IG') {
   const u = normalizeHandle(rawUser);
   if (!u) return null;
@@ -240,9 +300,9 @@ function demoteUserToOccasionalMinWeight(rawUser, reason = 'Restricción/bloqueo
   };
 
   saveUsersGroupsToDisk(groups);
-  console.warn(
-    `⚠️ [Contingencia] Usuario ${u} movido automáticamente a Ocasionales con peso mínimo (0.15). Motivo: ${reason}`
-  );
+  const msg = `⚠️ [Contingencia] Usuario ${u} movido automáticamente a Ocasionales con peso mínimo (0.15x). Motivo: ${reason}`;
+  console.warn(msg);
+  sendTelegramNotification(msg);
   return groups;
 }
 
@@ -251,28 +311,146 @@ function loadSavedUsers() {
   return [...frequentUsers, ...occasionalUsers];
 }
 
-// Argumentos opcionales por CLI
+// ============================================================================
+// Notificaciones y Control Remoto por Telegram (Desde tu Teléfono)
+// ============================================================================
+let lastTelegramUpdateId = 0;
+
+function telegramApiRequest(botToken, method, payload = null) {
+  return new Promise((resolve) => {
+    if (!botToken) return resolve(null);
+    const bodyData = payload ? JSON.stringify(payload) : null;
+    const req = https.request(
+      {
+        hostname: 'api.telegram.org',
+        path: `/bot${botToken}/${method}`,
+        method: payload ? 'POST' : 'GET',
+        headers: payload
+          ? {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(bodyData),
+            }
+          : {},
+        timeout: 10000,
+      },
+      (res) => {
+        let raw = '';
+        res.on('data', (chunk) => { raw += chunk; });
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(raw));
+          } catch {
+            resolve(null);
+          }
+        });
+      }
+    );
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(null);
+    });
+    if (bodyData) req.write(bodyData);
+    req.end();
+  });
+}
+
+async function sendTelegramNotification(text, forceToken = null, forceChatId = null) {
+  const cfg = PANEL_CONFIG.telegram || {};
+  const token = forceToken || cfg.botToken;
+  const chatId = forceChatId || cfg.chatId;
+  if (!token || !chatId) return { ok: false, error: 'Falta Bot Token o Chat ID' };
+  if (!forceToken && !cfg.enabled) return { ok: false, error: 'Notificaciones desactivadas' };
+
+  const res = await telegramApiRequest(token, 'sendMessage', {
+    chat_id: chatId,
+    text,
+  });
+  return res && res.ok ? { ok: true } : { ok: false, error: res?.description || 'Error en API de Telegram' };
+}
+
+function startTelegramRemoteControlLoop(onRemoteStartPost, onRemoteStopAll) {
+  setInterval(async () => {
+    const cfg = PANEL_CONFIG.telegram || {};
+    if (!cfg.enabled || !cfg.botToken || !cfg.chatId) return;
+
+    const data = await telegramApiRequest(
+      cfg.botToken,
+      `getUpdates?offset=${lastTelegramUpdateId + 1}&timeout=1`
+    );
+    if (!data || !data.ok || !Array.isArray(data.result)) return;
+
+    for (const update of data.result) {
+      lastTelegramUpdateId = Math.max(lastTelegramUpdateId, update.update_id);
+      const msg = update.message;
+      if (!msg || !msg.text) continue;
+      if (String(msg.chat.id) !== String(cfg.chatId).trim()) continue;
+
+      const text = msg.text.trim();
+
+      if (text === '/estado' || text === '/status') {
+        const activeList = Array.from(ACTIVE_JOBS.values());
+        const summary =
+          activeList.length === 0
+            ? '📭 No hay sorteos activos en este momento.'
+            : activeList
+                .map(
+                  (j) =>
+                    `${j.running ? '🔄' : '✅'} Post #${j.id} (${j.accountLabel}): ${j.completed}/${j.total} — Prob: ${
+                      j.probabilities?.estimatedRealPercent || 0
+                    }%\n   ${j.phaseMessage}`
+                )
+                .join('\n\n');
+        await sendTelegramNotification(
+          `📊 ESTADO DEL BOT:\n• Sesión: ${ANALYTICS.sessionComments} msjs\n• Histórico: ${ANALYTICS.totalHistoricalComments} msjs\n\n${summary}`,
+          cfg.botToken,
+          cfg.chatId
+        );
+      } else if (text === '/detener' || text === '/stop') {
+        onRemoteStopAll();
+        await sendTelegramNotification('⏹️ Todos los posts activos han sido detenidos desde tu teléfono.', cfg.botToken, cfg.chatId);
+      } else if (/instagram\.com\/(p|reel|tv)\//i.test(text)) {
+        // Si el usuario envía un link de Instagram desde el teléfono: "https://instagram.com/p/XXXX/ Mi mensaje opcional"
+        const parts = text.split(/\s+/);
+        const urlPart = parts.find((p) => /instagram\.com\/(p|reel|tv)\//i.test(p));
+        const customMsg = parts.filter((p) => p !== urlPart).join(' ').trim();
+
+        await sendTelegramNotification(
+          `📲 Link recibido desde tu teléfono:\n${urlPart}\n🔍 Analizando reglas del sorteo e iniciando automáticamente...`,
+          cfg.botToken,
+          cfg.chatId
+        );
+        onRemoteStartPost(urlPart, customMsg);
+      } else if (text === '/ayuda' || text === '/start') {
+        await sendTelegramNotification(
+          '🤖 Comandos de Control Remoto:\n' +
+          '• Envíame cualquier link de un post/reel de Instagram (opcionalmente seguido de un mensaje) y lo iniciaré automáticamente.\n' +
+          '• /estado — Ver progreso y probabilidad de ganar\n' +
+          '• /detener — Detener todas las tandas activas',
+          cfg.botToken,
+          cfg.chatId
+        );
+      }
+    }
+  }, 4000);
+}
+
+// ============================================================================
+// Estado Global de Tareas y Coordinador de Turnos (Mutex)
+// ============================================================================
 const [, , initialUrl = '', initialComment = ''] = process.argv;
-
-// Registro global de tareas (Multi-Post en paralelo) y logs
 let nextJobId = 1;
-const ACTIVE_JOBS = new Map(); // jobId -> job object (incluye su propia pestaña `page`)
+const ACTIVE_JOBS = new Map();
 const GLOBAL_LOGS = [];
+const ACCOUNT_CONTEXTS = new Map(); // accountId -> { context, loginPage, label, sessionPath }
 
-// Mutex/Cola para intercalar la escritura entre múltiples posts sin que choquen al teclear
 let typingQueue = Promise.resolve();
 let lastPublishTimestamp = 0;
 
-/**
- * Garantiza que si hay 2 o más posts corriendo a la vez, solo uno escriba
- * en el teclado en cada instante y deje una separación mínima anti-spam (12-20s)
- * respecto al comentario de otro post.
- */
 function acquireTypingTurn(job, taskFn) {
   const run = async () => {
     if (job.cancelRequested) return;
 
-    // Si otro post acaba de publicar hace pocos segundos, esperamos una breve separación
     const elapsedMs = Date.now() - lastPublishTimestamp;
     const minGapMs = getRandomInt(12000, 20000);
     if (lastPublishTimestamp > 0 && elapsedMs < minGapMs) {
@@ -294,24 +472,15 @@ function acquireTypingTurn(job, taskFn) {
   return queued;
 }
 
-// ============================================================================
-// Funciones Auxiliares
-// ============================================================================
-
 function getRandomInt(min, max) {
   const low = Math.ceil(Math.min(min, max));
   const high = Math.floor(Math.max(min, max));
   return Math.floor(Math.random() * (high - low + 1)) + low;
 }
 
-/**
- * Algoritmo de Muestreo Ponderado sin Reemplazo + Cooldown:
- * - Grupo Frecuentes/Confianza (`frequentUsers`): Peso 5.0x y sin cooldown.
- * - Grupo Ocasionales/No Spamear (`occasionalUsers`): Peso 1.0x, y tras ser elegido
- *   entra en cooldown durante `cooldownTurns` comentarios (bajando su peso a 0.18).
- * - Usuarios penalizados por bloqueo/restricción (`penalizedUsers`): Peso mínimo 0.15x.
- * - `excludedInTurn`: usuarios que fallaron en el intento inmediato anterior de este mismo turno.
- */
+// ============================================================================
+// Algoritmo de Muestreo Ponderado + Cooldown + Rotación de Orden
+// ============================================================================
 function pickWeightedUniqueUsers({
   frequentUsers = [],
   occasionalUsers = [],
@@ -343,14 +512,13 @@ function pickWeightedUniqueUsers({
           return Number(penalizedUsers[u].weight) || 0.15;
         }
         if (freqSet.has(u)) {
-          return 5.0; // Peso 5x para cuentas de confianza (sin cooldown)
+          return 5.0;
         }
-        // Usuario ocasional: verificar si está en ventana de enfriamiento (cooldown)
         const lastUsedTurn = recentTurnMap.get(u);
         if (lastUsedTurn !== undefined && currentTurn - lastUsedTurn <= cooldownTurns) {
-          return 0.18; // Enfriamiento activo
+          return 0.18;
         }
-        return 1.0; // Peso base 1x para ocasionales fuera de enfriamiento
+        return 1.0;
       });
 
       const totalWeight = weights.reduce((acc, w) => acc + w, 0);
@@ -384,46 +552,18 @@ const GIVEAWAY_EMOJIS = [
   '💪', '🌟', '🥳', '💥', '🤞', '❤️', '🫶', '🎊', '🏆', '💎',
 ];
 
-const TEXT_VARIATION_SUFFIXES = [
-  '!', '!!', '🙌', '🔥', '✨', '🍀', '👏', '💯', '🚀', '🎉',
-];
-
-/**
- * Combina el texto complementario y los usuarios etiquetados cambiando el orden:
- * - modo 0: "@user1 @user2 Texto" (Texto al final)
- * - modo 1: "Texto @user1 @user2" (Texto al principio)
- * - modo 2: "@user1 Texto @user2" (Texto en medio, si hay >= 2 etiquetados)
- */
 function combineTextAndTags(phrase, selectedUsers, positionMode = 0) {
   const cleanPhrase = (phrase || '').trim();
-  if (!cleanPhrase) {
-    return selectedUsers.join(' ');
-  }
-  if (!selectedUsers || selectedUsers.length === 0) {
-    return cleanPhrase;
-  }
+  if (!cleanPhrase) return selectedUsers.join(' ');
+  if (!selectedUsers || selectedUsers.length === 0) return cleanPhrase;
 
   const mode = positionMode % (selectedUsers.length >= 2 ? 3 : 2);
-  if (mode === 0) {
-    // Texto al final: "@jesus @leo SI se puede"
-    return `${selectedUsers.join(' ')} ${cleanPhrase}`;
-  }
-  if (mode === 1) {
-    // Texto al principio: "SI se puede @jesus @leo"
-    return `${cleanPhrase} ${selectedUsers.join(' ')}`;
-  }
-  // Texto intercalado: "@jesus SI se puede @leo"
+  if (mode === 0) return `${selectedUsers.join(' ')} ${cleanPhrase}`;
+  if (mode === 1) return `${cleanPhrase} ${selectedUsers.join(' ')}`;
   const [firstUser, ...restUsers] = selectedUsers;
   return `${firstUser} ${cleanPhrase} ${restUsers.join(' ')}`;
 }
 
-/**
- * Construye el comentario garantizando:
- * 1. Alternancia del orden del texto complementario (principio, final o medio).
- * 2. Soporte para varias frases separadas por "|" (ej: "SI se puede | Vamos").
- * 3. No repetir el mismo string exacto en el mismo post (`usedSet`).
- * 4. Separación siempre con espacio antes y después de cada @usuario para no afectar regex.
- */
 function buildUniqueGiveawayComment({
   frequentUsers = [],
   occasionalUsers = [],
@@ -439,7 +579,6 @@ function buildUniqueGiveawayComment({
   lastKey = '',
   commentIndex = 1,
 }) {
-  // Permitir una frase o varias separadas por "|"
   const phrases = String(baseComment || '')
     .split('|')
     .map((s) => s.trim())
@@ -461,7 +600,6 @@ function buildUniqueGiveawayComment({
     const chosenPhrase =
       phrases.length > 0 ? phrases[(commentIndex + attempt) % phrases.length] : '';
 
-    // Rotamos la posición del texto (principio, final o intercalado)
     const positionMode = (commentIndex + attempt) % 3;
     const coreText = combineTextAndTags(chosenPhrase, selectedUsers, positionMode);
 
@@ -475,7 +613,6 @@ function buildUniqueGiveawayComment({
       return { commentText: coreText, combinationKey: tagsPart, selectedUsers };
     }
 
-    // Si la combinación + posición ya salió antes, añadimos una variación ligera separada por espacio
     let suffix = '';
     if (allowEmojis) {
       const e1 = GIVEAWAY_EMOJIS[getRandomInt(0, GIVEAWAY_EMOJIS.length - 1)];
@@ -485,7 +622,6 @@ function buildUniqueGiveawayComment({
       suffix = punct;
     }
 
-    // Alternar si el sufijo va al final o al principio (siempre con espacio para proteger el @username)
     const candidate =
       attempt % 2 === 0 ? `${coreText} ${suffix}` : `${suffix} ${coreText}`;
     const normalizedCandidate = candidate.trim().toLowerCase();
@@ -517,15 +653,58 @@ function buildUniqueGiveawayComment({
   return { commentText: fallbackText, combinationKey: tagsPart, selectedUsers };
 }
 
+// ============================================================================
+// Simulación Humana Avanzada: Typos + Backspace y Micro-Movimientos / Scroll
+// ============================================================================
+const QWERTY_NEIGHBORS = {
+  a: 'sq', b: 'vn', c: 'xv', d: 'sf', e: 'wr', f: 'dg', g: 'fh', h: 'gj',
+  i: 'uo', j: 'hk', k: 'jl', l: 'k', m: 'n', n: 'bm', o: 'ip', p: 'o',
+  q: 'wa', r: 'et', s: 'ad', t: 'ry', u: 'yi', v: 'cb', w: 'qe', x: 'zc',
+  y: 'tu', z: 'x',
+};
+
 /**
- * Escribe texto letra por letra usando pressSequentially con un delay
- * aleatorio entre minDelay y maxDelay en cada pulsación.
+ * Escribe texto carácter por carácter con simulación humana avanzada:
+ * - Delay variable por tecla (65ms-135ms) y pausas naturales en espacios y '@'.
+ * - Si `simulateTypos` está activo, en letras normales (fuera de @usernames)
+ *   ocasionalmente comete un error humano con una tecla vecina, hace una breve
+ *   pausa, presiona Backspace y escribe la letra correcta.
  */
-async function humanType(locator, text, minDelay = 65, maxDelay = 135, shouldCancel = () => false) {
-  for (const char of text) {
+async function humanType(
+  locator,
+  text,
+  minDelay = 65,
+  maxDelay = 135,
+  shouldCancel = () => false,
+  simulateTypos = true
+) {
+  let insideHandle = false;
+
+  for (let i = 0; i < text.length; i++) {
     if (shouldCancel()) {
       throw new Error('Envío detenido manualmente por el usuario.');
     }
+
+    const char = text[i];
+    if (char === '@') insideHandle = true;
+    if (char === ' ') insideHandle = false;
+
+    const lower = char.toLowerCase();
+    // Simular typo humano (~6% de probabilidad en letras fuera de @usuario) y corregirlo con Backspace
+    if (
+      simulateTypos &&
+      !insideHandle &&
+      QWERTY_NEIGHBORS[lower] &&
+      Math.random() < 0.06
+    ) {
+      const neighbors = QWERTY_NEIGHBORS[lower];
+      const wrongChar = neighbors[Math.floor(Math.random() * neighbors.length)];
+      await locator.pressSequentially(wrongChar, { delay: getRandomInt(minDelay, maxDelay) });
+      await new Promise((r) => setTimeout(r, getRandomInt(140, 260)));
+      await locator.press('Backspace');
+      await new Promise((r) => setTimeout(r, getRandomInt(90, 170)));
+    }
+
     let delay = getRandomInt(minDelay, maxDelay);
     if (char === ' ' || char === '@') {
       delay += getRandomInt(40, 110);
@@ -535,18 +714,228 @@ async function humanType(locator, text, minDelay = 65, maxDelay = 135, shouldCan
 }
 
 /**
- * Espera cancelable con cuenta regresiva para un post específico.
+ * Durante los tiempos de espera entre comentarios, realiza ocasionalmente
+ * un micro-movimiento de mouse o pequeño scroll suave para simular lectura humana.
  */
+async function performMicroHumanIdleAction(page) {
+  try {
+    if (!page || page.isClosed()) return;
+    if (Math.random() < 0.5) {
+      const x = getRandomInt(280, 920);
+      const y = getRandomInt(200, 620);
+      await page.mouse.move(x, y, { steps: getRandomInt(4, 10) });
+    } else {
+      const deltaY = getRandomInt(-110, 140);
+      await page.mouse.wheel(0, deltaY);
+    }
+  } catch {}
+}
+
 async function sleepJobWithCountdown(job, totalSeconds, prefixText) {
   for (let remaining = totalSeconds; remaining > 0; remaining--) {
     if (job.cancelRequested) {
       throw new Error('Envío detenido manualmente por el usuario.');
     }
     job.phaseMessage = `${prefixText} (${remaining}s restantes)...`;
+    if (remaining % 18 === 0 && job.page) {
+      await performMicroHumanIdleAction(job.page);
+    }
     await new Promise((r) => setTimeout(r, 1000));
   }
 }
 
+// ============================================================================
+// Auto-Detector de Reglas del Sorteo, Fechas de Cierre ("hasta el tal día") y Auto-Like
+// ============================================================================
+const MONTHS_ES = {
+  enero: 0, febrero: 1, marzo: 2, abril: 3, mayo: 4, junio: 5,
+  julio: 6, agosto: 7, septiembre: 8, setiembre: 8, octubre: 9, noviembre: 10, diciembre: 11,
+};
+
+const WORD_NUMBERS_ES = {
+  un: 1, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
+  one: 1, two: 2, three: 3, four: 4, five: 5,
+};
+
+/**
+ * Analiza el texto/descripción de un post de sorteo para detectar:
+ * 1. Cuántos amigos pide etiquetar (`detectedTagsCount`).
+ * 2. Si pide comentar una palabra o frase específica (`detectedKeyword`).
+ * 3. Si el sorteo ya fue anunciado como cerrado (`isClosed`, `closeReason`).
+ * 4. Si menciona fecha límite ("hasta el 20 de noviembre", "sorteo el 18/11") y si ya venció.
+ */
+function parseGiveawayRulesFromCaption(captionText = '') {
+  const clean = String(captionText || '');
+  const result = {
+    detectedTagsCount: null,
+    detectedKeyword: '',
+    isClosed: false,
+    closeReason: '',
+    deadlineText: '',
+    deadlineIso: '',
+    summary: [],
+  };
+
+  if (!clean) return result;
+
+  // 1. Verificar frases explícitas de sorteo cerrado / finalizado
+  const closedRegex =
+    /(?:sorteo\s+cerrado|concurso\s+cerrado|sorteo\s+finalizado|giveaway\s+closed|ganador(?:es)?\s*:\s*@|ya\s+tenemos\s+ganador|sorteo\s+realizado)/i;
+  const closedMatch = clean.match(closedRegex);
+  if (closedMatch) {
+    result.isClosed = true;
+    result.closeReason = `La descripción indica "${closedMatch[0].trim()}"`;
+    result.summary.push(`🛑 ${result.closeReason}`);
+  }
+
+  // 2. Detectar fecha límite ("hasta el 20 de noviembre", "cierra el 15 de noviembre", "finaliza el 22/11")
+  const now = new Date();
+  const currentYear = now.getFullYear();
+
+  const dateEsRegex =
+    /(?:hasta\s+el|cierra\s+el|finaliza\s+el|termina\s+el|sorteo\s+el|ganador(?:es)?\s+el|anunciamos\s+el|válido\s+hasta\s+el)\s+(?:día\s+|lunes\s+|martes\s+|miércoles\s+|miercoles\s+|jueves\s+|viernes\s+|sábado\s+|sabado\s+|domingo\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de(?:l)?\s+(\d{4}))?/i;
+
+  const dateEsMatch = clean.match(dateEsRegex);
+  if (dateEsMatch) {
+    const day = parseInt(dateEsMatch[1], 10);
+    const monthName = dateEsMatch[2].toLowerCase();
+    const monthIdx = MONTHS_ES[monthName];
+    const year = dateEsMatch[3] ? parseInt(dateEsMatch[3], 10) : currentYear;
+
+    if (monthIdx !== undefined && day >= 1 && day <= 31) {
+      const deadlineDate = new Date(year, monthIdx, day, 23, 59, 59);
+      result.deadlineText = `${day} de ${monthName} de ${year}`;
+      result.deadlineIso = deadlineDate.toISOString();
+
+      if (deadlineDate.getTime() < now.getTime()) {
+        result.isClosed = true;
+        result.closeReason = `La fecha límite del sorteo venció el ${result.deadlineText}`;
+        result.summary.push(`🛑 Sorteo vencido (${result.deadlineText})`);
+      } else {
+        result.summary.push(`📅 Fecha límite detectada: hasta el ${result.deadlineText}`);
+      }
+    }
+  } else {
+    // Formato numérico: "hasta el 25/11" o "finaliza el 25/11/2026"
+    const numericDateRegex =
+      /(?:hasta\s+el|cierra\s+el|finaliza\s+el|termina\s+el|sorteo\s+el)\s+(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/i;
+    const numMatch = clean.match(numericDateRegex);
+    if (numMatch) {
+      const day = parseInt(numMatch[1], 10);
+      const monthIdx = parseInt(numMatch[2], 10) - 1;
+      let year = numMatch[3] ? parseInt(numMatch[3], 10) : currentYear;
+      if (year < 100) year += 2000;
+
+      if (monthIdx >= 0 && monthIdx <= 11 && day >= 1 && day <= 31) {
+        const deadlineDate = new Date(year, monthIdx, day, 23, 59, 59);
+        result.deadlineText = `${day}/${monthIdx + 1}/${year}`;
+        result.deadlineIso = deadlineDate.toISOString();
+
+        if (deadlineDate.getTime() < now.getTime()) {
+          result.isClosed = true;
+          result.closeReason = `La fecha límite del sorteo venció el ${result.deadlineText}`;
+          result.summary.push(`🛑 Sorteo vencido (${result.deadlineText})`);
+        } else {
+          result.summary.push(`📅 Fecha límite detectada: hasta el ${result.deadlineText}`);
+        }
+      }
+    }
+  }
+
+  // 3. Detectar cuántos amigos pide etiquetar ("etiqueta a 2 amigos", "menciona a tres personas", "tag 2 friends")
+  const mentionRuleRegex =
+    /(?:etiqueta(?:r|ndo)?|menciona(?:r|ndo)?|tag(?:gear|ging)?|comenta(?:r)?\s+etiquetando)\s+(?:a\s+)?(\d+|un|uno|una|dos|tres|cuatro|cinco|one|two|three|four|five)\s+(?:amigo|persona|cuenta|usuario|friend|people)/i;
+  const mentionMatch = clean.match(mentionRuleRegex);
+  if (mentionMatch) {
+    const rawNum = mentionMatch[1].toLowerCase();
+    const count = WORD_NUMBERS_ES[rawNum] || parseInt(rawNum, 10);
+    if (count >= 1 && count <= 10) {
+      result.detectedTagsCount = count;
+      result.summary.push(`👤 Pide etiquetar a ${count} amigo(s)`);
+    }
+  }
+
+  // 4. Detectar si pide comentar una palabra clave entre comillas ('comenta la palabra "QUIERO"')
+  const keywordRegex =
+    /(?:comenta(?:r)?|escribe|escribir|pon(?:er)?)\s+(?:la\s+palabra\s+|la\s+frase\s+)?["“«']([^"”»'\n]{2,28})["”»']/i;
+  const kwMatch = clean.match(keywordRegex);
+  if (kwMatch) {
+    result.detectedKeyword = kwMatch[1].trim();
+    result.summary.push(`💬 Pide comentar: "${result.detectedKeyword}"`);
+  }
+
+  return result;
+}
+
+/**
+ * Extrae la descripción completa del post en la página actual y analiza las reglas del sorteo.
+ */
+async function extractAndAnalyzeGiveawayRules(page) {
+  try {
+    const fullCaption = await page.evaluate(() => {
+      const metaDesc =
+        document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
+        document.querySelector('meta[name="description"]')?.getAttribute('content') ||
+        '';
+      const articleText = document.querySelector('article, main')?.innerText || '';
+      return `${metaDesc}\n${articleText.slice(0, 3500)}`;
+    });
+
+    return parseGiveawayRulesFromCaption(fullCaption);
+  } catch {
+    return parseGiveawayRulesFromCaption('');
+  }
+}
+
+/**
+ * Da Like ❤️ automáticamente al post (si aún no tiene Like) y sigue a la cuenta organizadora
+ * si aparece el botón "Seguir" / "Follow" en la cabecera del post.
+ */
+async function performAutoLikeAndFollow(page) {
+  const actionsDone = [];
+  try {
+    // 1. Verificar si aún no le hemos dado Like (si ya tiene Like el aria-label cambia a "Ya no me gusta" o "Unlike")
+    const likeSvg = page.locator(
+      'article section svg[aria-label="Me gusta"], ' +
+      'article section svg[aria-label="Like"], ' +
+      'main section svg[aria-label="Me gusta"], ' +
+      'main section svg[aria-label="Like"]'
+    ).first();
+
+    if (await likeSvg.isVisible({ timeout: 2500 }).catch(() => false)) {
+      const likeBtn = likeSvg.locator('xpath=ancestor::div[@role="button" or self::button][1]').first();
+      if (await likeBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+        await likeBtn.click().catch(() => {});
+        actionsDone.push('❤️ Like dado al post');
+        await page.waitForTimeout(900);
+      }
+    }
+  } catch {}
+
+  try {
+    // 2. Verificar si en el header del post aparece el botón "Seguir" / "Follow" del organizador
+    const followBtn = page.locator(
+      'article header button:text-is("Seguir"), ' +
+      'article header button:text-is("Follow"), ' +
+      'article header div[role="button"]:text-is("Seguir"), ' +
+      'article header div[role="button"]:text-is("Follow"), ' +
+      'main header button:text-is("Seguir"), ' +
+      'main header button:text-is("Follow")'
+    ).first();
+
+    if (await followBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await followBtn.click().catch(() => {});
+      actionsDone.push('➕ Siguiendo al organizador');
+      await page.waitForTimeout(900);
+    }
+  } catch {}
+
+  return actionsDone;
+}
+
+// ============================================================================
+// Funciones de Modales, Conteo de Comentarios y Miniaturas
+// ============================================================================
 async function dismissCookiesModal(page) {
   try {
     const cookieButton = page.locator(
@@ -583,17 +972,15 @@ async function dismissPostLoginModals(page) {
   }
 }
 
-/**
- * Inicio de sesión no bloqueante (nunca cierra el navegador por timeout).
- */
-async function startNonBlockingLogin(igPage, context, onAuthenticated) {
+async function startNonBlockingLogin(igPage, context, sessionSavePath, onAuthenticated) {
   const username = process.env.IG_USERNAME;
   const password = process.env.IG_PASSWORD;
   const hasEnvCredentials =
     username &&
     password &&
     username !== 'tu_usuario_aqui' &&
-    password !== 'tu_password_aqui';
+    password !== 'tu_password_aqui' &&
+    sessionSavePath === CONFIG.sessionFile;
 
   console.log('🔐 Abriendo página de inicio de sesión de Instagram...');
   await igPage.goto(CONFIG.loginUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
@@ -609,12 +996,10 @@ async function startNonBlockingLogin(igPage, context, onAuthenticated) {
       ).first();
 
       if (await userInput.isVisible({ timeout: 6000 })) {
-        console.log('⌨️ Escribiendo usuario y contraseña desde .env...');
         await userInput.click();
-        await humanType(userInput, username, 60, 110);
-
+        await humanType(userInput, username, 60, 110, () => false, false);
         await passInput.click();
-        await humanType(passInput, password, 60, 110);
+        await humanType(passInput, password, 60, 110, () => false, false);
 
         const submitButton = igPage.locator(
           'button[type="submit"], ' +
@@ -624,16 +1009,8 @@ async function startNonBlockingLogin(igPage, context, onAuthenticated) {
 
         await submitButton.click();
       }
-    } catch (err) {
-      console.log(`ℹ️ Autocompletado pausado (${err.message}). Puedes continuar manualmente en la ventana.`);
-    }
+    } catch {}
   }
-
-  console.log(
-    '\n⏳ MODO MANUAL ACTIVO (Sin límite de tiempo):\n' +
-    '   👉 Completa cualquier verificación, código 2FA o inicio de sesión en la pestaña de Instagram.\n' +
-    '   👉 El navegador NO se cerrará solo. Cuando entres al feed, la sesión se guardará automáticamente.\n'
-  );
 
   (async () => {
     const authenticatedIndicator = igPage.locator(
@@ -647,10 +1024,9 @@ async function startNonBlockingLogin(igPage, context, onAuthenticated) {
     while (!igPage.isClosed()) {
       try {
         if (await authenticatedIndicator.isVisible({ timeout: 2000 })) {
-          console.log('✅ ¡Sesión detectada en el feed de Instagram! Guardando sesion_ig.json...');
           await dismissPostLoginModals(igPage);
-          await context.storageState({ path: CONFIG.sessionFile });
-          console.log(`💾 Sesión guardada en: ${CONFIG.sessionFile}`);
+          await context.storageState({ path: sessionSavePath });
+          console.log(`💾 Sesión guardada automáticamente en: ${sessionSavePath}`);
           if (onAuthenticated) await onAuthenticated();
           break;
         }
@@ -660,10 +1036,6 @@ async function startNonBlockingLogin(igPage, context, onAuthenticated) {
   })();
 }
 
-/**
- * Extrae el número total de comentarios que tiene el post en Instagram
- * inspeccionando JSON interno de Relay/Polaris, meta tags y nodos del DOM.
- */
 async function extractPostCommentCount(page, postUrl = '') {
   try {
     const shortcode = normalizePostKey(postUrl);
@@ -671,7 +1043,6 @@ async function extractPostCommentCount(page, postUrl = '') {
       function parseHumanNumber(raw) {
         if (!raw) return null;
         const clean = String(raw).trim().toLowerCase();
-        // Soporte para "1,2 mil", "1.5k", "1,234", "1.234"
         if (clean.includes('mil') || clean.endsWith('k')) {
           const num = parseFloat(clean.replace(/[^\d.,]/g, '').replace(',', '.'));
           return Number.isNaN(num) ? null : Math.round(num * 1000);
@@ -680,30 +1051,24 @@ async function extractPostCommentCount(page, postUrl = '') {
         return digitsOnly ? parseInt(digitsOnly, 10) : null;
       }
 
-      // 1. Buscar en scripts JSON internos de Instagram (Relay / Polaris store)
       const scripts = Array.from(document.querySelectorAll('script[type="application/json"]'));
       for (const s of scripts) {
         const txt = s.textContent || '';
         if (code && !txt.includes(code)) continue;
-
         const match1 = txt.match(/"comment_count"\s*:\s*(\d+)/);
         if (match1) return parseInt(match1[1], 10);
-
         const match2 = txt.match(/"edge_media_to_parent_comment"\s*:\s*\{\s*"count"\s*:\s*(\d+)/);
         if (match2) return parseInt(match2[1], 10);
-
         const match3 = txt.match(/"edge_media_to_comment"\s*:\s*\{\s*"count"\s*:\s*(\d+)/);
         if (match3) return parseInt(match3[1], 10);
       }
 
-      // Segunda pasada en cualquier script application/json aunque no tenga el shortcode literal
       for (const s of scripts) {
         const txt = s.textContent || '';
         const match1 = txt.match(/"comment_count"\s*:\s*(\d+)/);
         if (match1) return parseInt(match1[1], 10);
       }
 
-      // 2. Buscar en meta description / og:description ("123 likes, 45 comments" / "45 comentarios")
       const metaDesc =
         document.querySelector('meta[name="description"]')?.getAttribute('content') ||
         document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
@@ -714,7 +1079,6 @@ async function extractPostCommentCount(page, postUrl = '') {
         if (parsed !== null) return parsed;
       }
 
-      // 3. Buscar texto visible "Ver los X comentarios" / "View all X comments"
       const bodyText = document.body ? document.body.innerText : '';
       const viewAllMatch = bodyText.match(
         /(?:Ver los|Ver todos los|View all)\s+([\d.,]+\s*(?:mil|k)?)\s+(?:comentarios|comments)/i
@@ -722,19 +1086,6 @@ async function extractPostCommentCount(page, postUrl = '') {
       if (viewAllMatch) {
         const parsed = parseHumanNumber(viewAllMatch[1]);
         if (parsed !== null) return parsed;
-      }
-
-      // 4. Buscar contador junto al ícono SVG de Comentario (común en Reels y vista nueva)
-      const commentSvg = document.querySelector(
-        'svg[aria-label*="Comentario" i], svg[aria-label*="Comment" i]'
-      );
-      if (commentSvg) {
-        const btnContainer = commentSvg.closest('div[role="button"], button, span');
-        if (btnContainer && btnContainer.parentElement) {
-          const textNear = btnContainer.parentElement.innerText || '';
-          const parsed = parseHumanNumber(textNear);
-          if (parsed !== null && parsed > 0) return parsed;
-        }
       }
 
       return null;
@@ -746,10 +1097,6 @@ async function extractPostCommentCount(page, postUrl = '') {
   }
 }
 
-/**
- * Extrae metadatos del post (autor, descripción corta) y toma una miniatura
- * en Base64 JPEG de la imagen/video del post para la Galería del Dashboard.
- */
 async function extractPostDetailsAndThumbnail(page) {
   let author = '';
   let caption = '';
@@ -763,7 +1110,6 @@ async function extractPostDetailsAndThumbnail(page) {
         document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
         '';
 
-      // Intentar obtener autor desde el header del post o desde og:title
       let foundAuthor = '';
       const headerLink = document.querySelector('article header a[href^="/"], main header a[href^="/"]');
       if (headerLink && headerLink.textContent) {
@@ -773,7 +1119,6 @@ async function extractPostDetailsAndThumbnail(page) {
         if (m) foundAuthor = m[1].trim();
       }
 
-      // Limpiar descripción corta
       let foundCaption = metaDesc;
       const quoteMatch = metaDesc.match(/:\s*"([^"]+)"/);
       if (quoteMatch) {
@@ -784,7 +1129,7 @@ async function extractPostDetailsAndThumbnail(page) {
 
       return {
         author: foundAuthor.slice(0, 50),
-        caption: foundCaption.slice(0, 140),
+        caption: foundCaption.slice(0, 160),
       };
     });
 
@@ -793,7 +1138,6 @@ async function extractPostDetailsAndThumbnail(page) {
   } catch {}
 
   try {
-    // Capturar miniatura de la foto/video principal del post o de la parte central de la página
     const mediaLocator = page.locator('article img, article video, main img, main video').first();
     if (await mediaLocator.isVisible({ timeout: 2500 }).catch(() => false)) {
       const buf = await mediaLocator.screenshot({ type: 'jpeg', quality: 55 });
@@ -811,25 +1155,15 @@ async function extractPostDetailsAndThumbnail(page) {
   return { author, caption, thumbnail };
 }
 
-/**
- * Calcula el porcentaje bruto y la probabilidad real estimada de ganar en un post.
- */
 function calculateWinProbabilities(myCommentsCount, postTotalComments) {
   const myCount = Math.max(0, Number(myCommentsCount) || 0);
   const totalPost = Math.max(myCount, Number(postTotalComments) || 0);
 
   if (totalPost <= 0 || myCount <= 0) {
-    return {
-      rawPercent: 0,
-      estimatedRealPercent: 0,
-      oneInX: null,
-    };
+    return { rawPercent: 0, estimatedRealPercent: 0, oneInX: null };
   }
 
   const rawPercent = (myCount / totalPost) * 100;
-  // Estimación real: ~25% de los comentarios de otros usuarios suelen ser descartados
-  // por las plataformas de sorteos (respuestas anidadas, sin menciones suficientes o duplicados),
-  // mientras que tus comentarios llevan validación anti-duplicado.
   const otherComments = Math.max(0, totalPost - myCount);
   const validOtherComments = otherComments * 0.75;
   const estimatedRealPercent = (myCount / (myCount + validOtherComments)) * 100;
@@ -842,10 +1176,9 @@ function calculateWinProbabilities(myCommentsCount, postTotalComments) {
   };
 }
 
-/**
- * Cierra cualquier modal o alerta inesperada en Instagram ("Aceptar", "OK", "Cerrar",
- * "Ahora no", "Cancelar", etc.) para que el bot nunca se quede bloqueado en pantalla.
- */
+// ============================================================================
+// Manejo de Contingencias / Alertas en Instagram y Publicación
+// ============================================================================
 async function dismissUnexpectedInstagramAlerts(page) {
   try {
     const closeAlertBtn = page.locator(
@@ -869,11 +1202,6 @@ async function dismissUnexpectedInstagramAlerts(page) {
   return false;
 }
 
-/**
- * Inspecciona si Instagram mostró una alerta de error al intentar publicar
- * (por ejemplo, si un amigo te bloqueó, restringió menciones o hay un aviso temporal).
- * Lee el mensaje, cierra el diálogo y devuelve qué ocurrió.
- */
 async function inspectAndDismissPublishAlert(page, selectedUsers = []) {
   try {
     const alertInfo = await page.evaluate(() => {
@@ -889,12 +1217,18 @@ async function inspectAndDismissPublishAlert(page, selectedUsers = []) {
 
     const combinedText = `${alertInfo.dialogText}\n${alertInfo.bodySnippet}`;
 
-    // 1. Detectar alerta de restricción de mención o bloqueo de usuario
+    // Verificar si los comentarios fueron cerrados o el sorteo finalizó en vivo
+    if (/(?:Se han limitado los comentarios|Comments on this post have been limited|Se desactivaron los comentarios)/i.test(combinedText)) {
+      return {
+        type: 'giveaway_closed',
+        alertText: 'El organizador limitó o cerró los comentarios de este post.',
+      };
+    }
+
     const mentionBlockRegex =
       /(?:no se puede mencionar|can't mention|no permite que|doesn't allow|restringi|restricted|no puedes mencionar|cannot mention)/i;
 
     if (mentionBlockRegex.test(combinedText)) {
-      // Buscar si el texto de la alerta nombra explícitamente a alguno de los usuarios etiquetados
       const explicitUsers = [];
       for (const u of selectedUsers) {
         const bareName = u.replace(/^@/, '').toLowerCase();
@@ -913,7 +1247,6 @@ async function inspectAndDismissPublishAlert(page, selectedUsers = []) {
       };
     }
 
-    // 2. Detectar límite temporal de frecuencia (Rate Limit / Action Block)
     const rateLimitRegex =
       /(?:Inténtalo de nuevo más tarde|Try Again Later|Restringimos determinadas actividades|We restrict certain activity)/i;
 
@@ -926,7 +1259,6 @@ async function inspectAndDismissPublishAlert(page, selectedUsers = []) {
       };
     }
 
-    // 3. Detectar fallo genérico de envío ("No se pudo publicar el comentario" / "Couldn't post comment")
     const genericFailRegex = /(?:No se pudo publicar el comentario|Couldn't post comment)/i;
     if (genericFailRegex.test(combinedText)) {
       await dismissUnexpectedInstagramAlerts(page);
@@ -937,7 +1269,6 @@ async function inspectAndDismissPublishAlert(page, selectedUsers = []) {
       };
     }
 
-    // Si había un diálogo desconocido, lo cerramos preventivamente
     if (alertInfo.hasDialog) {
       await dismissUnexpectedInstagramAlerts(page);
     }
@@ -946,18 +1277,14 @@ async function inspectAndDismissPublishAlert(page, selectedUsers = []) {
   return { type: 'none' };
 }
 
-/**
- * Publica un único comentario dentro de la pestaña dedicada del post
- * EN SEGUNDO PLANO, manejando caminos alternos (contingencias, alertas de bloqueo/mención
- * o congelamiento del DOM) sin detener el bot.
- */
 async function publicarUnComentarioEnPagina(
   jobPage,
   commentToSend,
   selectedUsers,
   minDelay,
   maxDelay,
-  shouldCancel
+  shouldCancel,
+  simulateTypos = true
 ) {
   await dismissUnexpectedInstagramAlerts(jobPage);
 
@@ -971,7 +1298,6 @@ async function publicarUnComentarioEnPagina(
   let commentBox = jobPage.locator(commentSelector).first();
   let isVisible = await commentBox.isVisible({ timeout: 10000 }).catch(() => false);
 
-  // Contingencia: si la caja de comentarios desapareció por un micro-corte o modal, recargamos la pestaña
   if (!isVisible) {
     console.warn('🔄 [Contingencia] Caja de comentarios no visible. Recargando pestaña del post...');
     await jobPage.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
@@ -980,11 +1306,20 @@ async function publicarUnComentarioEnPagina(
     await dismissPostLoginModals(jobPage);
     await dismissUnexpectedInstagramAlerts(jobPage);
 
+    // Verificar si el sorteo se cerró en la descripción al recargar
+    const liveRules = await extractAndAnalyzeGiveawayRules(jobPage);
+    if (liveRules.isClosed) {
+      return {
+        type: 'giveaway_closed',
+        alertText: liveRules.closeReason || 'El sorteo figura como cerrado.',
+      };
+    }
+
     commentBox = jobPage.locator(commentSelector).first();
     isVisible = await commentBox.isVisible({ timeout: 10000 }).catch(() => false);
     if (!isVisible) {
       throw new Error(
-        'No se encontró la caja de comentarios tras recargar. Verifica que la sesión esté activa y el post permita comentarios.'
+        'No se encontró la caja de comentarios (posiblemente cerraron los comentarios del sorteo).'
       );
     }
   }
@@ -997,7 +1332,7 @@ async function publicarUnComentarioEnPagina(
   await activeCommentBox.click();
   await activeCommentBox.fill('');
 
-  await humanType(activeCommentBox, commentToSend, minDelay, maxDelay, shouldCancel);
+  await humanType(activeCommentBox, commentToSend, minDelay, maxDelay, shouldCancel, simulateTypos);
   await jobPage.waitForTimeout(500);
 
   const publishButton = jobPage.locator(
@@ -1017,16 +1352,12 @@ async function publicarUnComentarioEnPagina(
 
   await jobPage.waitForTimeout(getRandomInt(4500, 6500));
 
-  // Inspeccionar si salió alguna alerta de bloqueo/restricción de mención o error
   const alertResult = await inspectAndDismissPublishAlert(jobPage, selectedUsers);
-
   if (alertResult.type !== 'none') {
-    // Limpiar el textarea por si el comentario fallido quedó escrito adentro
     await activeCommentBox.fill('').catch(() => {});
     return alertResult;
   }
 
-  // Verificar además si el texto quedó atrapado en el textarea sin enviarse (fallo silencioso de mención)
   const remainingValue = await activeCommentBox.inputValue().catch(() => '');
   if (remainingValue && remainingValue.trim().length > 0) {
     await activeCommentBox.fill('').catch(() => {});
@@ -1040,20 +1371,53 @@ async function publicarUnComentarioEnPagina(
   return { type: 'none' };
 }
 
-/**
- * Crea y ejecuta una tarea independiente para un Post en su propia pestaña,
- * coordinándose automáticamente con otros posts activos.
- */
-function crearYEjecutarTareaPost(context, config) {
+// ============================================================================
+// Gestor de Contextos por Cuenta (Multicuentas)
+// ============================================================================
+async function getOrCreateAccountContext(browser, accountId = 'principal') {
+  if (ACCOUNT_CONTEXTS.has(accountId)) {
+    return ACCOUNT_CONTEXTS.get(accountId);
+  }
+
+  PANEL_CONFIG = loadPanelConfig();
+  const accInfo =
+    PANEL_CONFIG.accounts.find((a) => a.id === accountId) || PANEL_CONFIG.accounts[0];
+
+  const contextOptions = { viewport: CONFIG.viewport };
+  if (fs.existsSync(accInfo.sessionPath)) {
+    contextOptions.storageState = accInfo.sessionPath;
+  }
+
+  const ctx = await browser.newContext(contextOptions);
+  const entry = {
+    id: accInfo.id,
+    label: accInfo.label,
+    sessionPath: accInfo.sessionPath,
+    context: ctx,
+    loginPage: null,
+  };
+  ACCOUNT_CONTEXTS.set(accInfo.id, entry);
+  return entry;
+}
+
+// ============================================================================
+// Ejecución de Tarea de Post (Con Modo Francotirador, Auto-Reglas y Auto-Like)
+// ============================================================================
+function crearYEjecutarTareaPost(browser, config) {
   const savedGroups = loadSavedUsersGroups();
   const {
     postUrl,
+    accountId = 'principal',
     frequentUsers = savedGroups.frequentUsers,
     occasionalUsers = savedGroups.occasionalUsers,
     cooldownTurns = 4,
     baseComment = '',
     tagsPerComment = 0,
     totalComments = 100,
+    scheduledStartTime = '',
+    autoDetectRules = true,
+    autoLikeFollow = true,
+    simulateTypos = true,
     antiDuplicate = true,
     allowEmojis = true,
     minDelay = 65,
@@ -1070,6 +1434,9 @@ function crearYEjecutarTareaPost(context, config) {
     throw new Error('La URL no es válida. Debe ser un enlace de post o reel (ej. https://www.instagram.com/p/XXXX/).');
   }
 
+  PANEL_CONFIG = loadPanelConfig();
+  const accMeta = PANEL_CONFIG.accounts.find((a) => a.id === accountId) || PANEL_CONFIG.accounts[0];
+
   const totalUniqueUsersCount = new Set([...frequentUsers, ...occasionalUsers]).size;
   const postKey = normalizePostKey(postUrl);
   const initialMyCount = ANALYTICS.myCommentsByPost[postKey] || 0;
@@ -1081,6 +1448,9 @@ function crearYEjecutarTareaPost(context, config) {
       tagsPerComment,
       totalComments,
       cooldownTurns,
+      autoDetectRules,
+      autoLikeFollow,
+      simulateTypos,
       antiDuplicate,
       allowEmojis,
       minDelay,
@@ -1096,6 +1466,8 @@ function crearYEjecutarTareaPost(context, config) {
   const jobId = nextJobId++;
   const job = {
     id: jobId,
+    accountId: accMeta.id,
+    accountLabel: accMeta.label,
     postUrl,
     postKey,
     baseComment,
@@ -1108,22 +1480,37 @@ function crearYEjecutarTareaPost(context, config) {
     postTotalComments: null,
     myTotalInPost: initialMyCount,
     probabilities: { rawPercent: 0, estimatedRealPercent: 0, oneInX: null },
-    phaseMessage: 'Abriendo pestaña dedicada para este post...',
+    detectedRulesSummary: '',
+    phaseMessage: 'Preparando tarea...',
     error: null,
     page: null,
   };
 
   ACTIVE_JOBS.set(jobId, job);
 
-  // Ejecución asíncrona independiente para este post
   (async () => {
     try {
-      await context.storageState({ path: CONFIG.sessionFile }).catch(() => {});
+      // 1. Modo Francotirador: Si tiene fecha/hora programada en el futuro, esperar hasta ese momento
+      if (scheduledStartTime) {
+        const targetMs = new Date(scheduledStartTime).getTime();
+        if (!Number.isNaN(targetMs) && targetMs > Date.now()) {
+          const waitSec = Math.ceil((targetMs - Date.now()) / 1000);
+          const targetReadable = new Date(targetMs).toLocaleString();
+          console.log(`🎯 [Post #${jobId}] Modo Francotirador programado para: ${targetReadable}`);
+          await sleepJobWithCountdown(
+            job,
+            waitSec,
+            `🎯 Francotirador esperando hora de inicio (${targetReadable})`
+          );
+        }
+      }
+
+      const accEntry = await getOrCreateAccountContext(browser, accMeta.id);
+      const { context, sessionPath } = accEntry;
 
       const jobPage = await context.newPage();
       job.page = jobPage;
 
-      // Escuchar respuestas de red de Instagram por si viene comment_count en JSON/GraphQL
       jobPage.on('response', async (response) => {
         try {
           const url = response.url();
@@ -1143,24 +1530,61 @@ function crearYEjecutarTareaPost(context, config) {
         } catch {}
       });
 
-      console.log(`\n🌐 [Post #${jobId}] Abriendo pestaña y navegando a: ${postUrl}`);
+      console.log(`\n🌐 [Post #${jobId} — ${accMeta.label}] Abriendo post: ${postUrl}`);
       await jobPage.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await jobPage.waitForTimeout(2500);
 
       await dismissCookiesModal(jobPage);
       await dismissPostLoginModals(jobPage);
 
-      // Extraer el total de comentarios y los detalles/foto del post para la Galería del Dashboard
+      const unavailableMessage = jobPage.locator(
+        'text=/Esta página no está disponible|Sorry, this page isn\'t available|Esta cuenta es privada|This account is private/i'
+      ).first();
+
+      if (await unavailableMessage.isVisible({ timeout: 2500 }).catch(() => false)) {
+        throw new Error('El post no está disponible, fue eliminado o pertenece a una cuenta privada.');
+      }
+
+      // 2. Analizar Reglas del Sorteo y Fecha Límite ("hasta el tal día")
+      const rules = await extractAndAnalyzeGiveawayRules(jobPage);
+      if (rules.summary.length > 0) {
+        job.detectedRulesSummary = rules.summary.join(' | ');
+        console.log(`🔍 [Post #${jobId}] Reglas detectadas: ${job.detectedRulesSummary}`);
+      }
+
+      if (rules.isClosed) {
+        throw new Error(`Sorteo finalizado detectado automáticamente: ${rules.closeReason}`);
+      }
+
+      let effectiveTagsPerComment = tagsPerComment;
+      let effectiveBaseComment = baseComment;
+
+      if (autoDetectRules) {
+        if (rules.detectedTagsCount !== null && rules.detectedTagsCount <= totalUniqueUsersCount) {
+          effectiveTagsPerComment = rules.detectedTagsCount;
+          job.tagsPerComment = effectiveTagsPerComment;
+        }
+        if (!effectiveBaseComment && rules.detectedKeyword) {
+          effectiveBaseComment = rules.detectedKeyword;
+          job.baseComment = effectiveBaseComment;
+        }
+      }
+
+      // 3. Auto-Like ❤️ al Post y Seguir al Organizador si está activado
+      if (autoLikeFollow) {
+        const socialActions = await performAutoLikeAndFollow(jobPage);
+        if (socialActions.length > 0) {
+          console.log(`✨ [Post #${jobId}] Acciones automáticas: ${socialActions.join(', ')}`);
+        }
+      }
+
+      // 4. Extraer Comentarios Totales y Miniatura para el Dashboard
       const detectedTotal = await extractPostCommentCount(jobPage, postUrl);
       const details = await extractPostDetailsAndThumbnail(jobPage);
 
       if (detectedTotal !== null) {
         job.postTotalComments = Math.max(detectedTotal, job.myTotalInPost);
         job.probabilities = calculateWinProbabilities(job.myTotalInPost, job.postTotalComments);
-        console.log(
-          `📊 [Post #${jobId}] Comentarios totales detectados en el post: ${job.postTotalComments} ` +
-          `(Tuyos acumulados: ${job.myTotalInPost} -> Probabilidad actual: ${job.probabilities.estimatedRealPercent}%)`
-        );
       }
 
       upsertPostInCatalog(postUrl, {
@@ -1170,15 +1594,15 @@ function crearYEjecutarTareaPost(context, config) {
         myComments: job.myTotalInPost,
         postTotalComments: job.postTotalComments,
         probabilities: job.probabilities,
+        detectedRules: rules,
       });
 
-      const unavailableMessage = jobPage.locator(
-        'text=/Esta página no está disponible|Sorry, this page isn\'t available|Esta cuenta es privada|This account is private/i'
-      ).first();
-
-      if (await unavailableMessage.isVisible({ timeout: 2500 }).catch(() => false)) {
-        throw new Error('El post no está disponible, fue eliminado o pertenece a una cuenta privada.');
-      }
+      await sendTelegramNotification(
+        `🚀 Sorteo Iniciado (Post #${jobId} — ${accMeta.label})\n` +
+        `🔗 ${postUrl}\n` +
+        `${job.detectedRulesSummary ? '🔍 ' + job.detectedRulesSummary + '\n' : ''}` +
+        `💬 Comentarios en el post: ${job.postTotalComments || 'Detectando...'}`
+      );
 
       let lastCombinationKey = '';
       const usedCommentsSet = new Set();
@@ -1191,12 +1615,19 @@ function crearYEjecutarTareaPost(context, config) {
           throw new Error('Envío detenido manualmente por el usuario.');
         }
 
+        // Cada 15 comentarios verificamos si el organizador editó la descripción a "SORTEO CERRADO"
+        if (i > 1 && i % 15 === 0) {
+          const checkRules = await extractAndAnalyzeGiveawayRules(jobPage);
+          if (checkRules.isClosed) {
+            throw new Error(`El sorteo acaba de cerrar (${checkRules.closeReason}). Deteniendo post.`);
+          }
+        }
+
         let publishedSuccessfully = false;
         let finalCommentSent = '';
         let finalSelectedUsers = [];
         const excludedInTurn = new Set();
 
-        // Hasta 3 intentos por turno en caso de que algún usuario haya bloqueado/restringido menciones
         for (let retry = 0; retry < 3 && !publishedSuccessfully; retry++) {
           const liveGroups = loadSavedUsersGroups();
           const activeFrequent = liveGroups.frequentUsers.length > 0 ? liveGroups.frequentUsers : frequentUsers;
@@ -1210,8 +1641,8 @@ function crearYEjecutarTareaPost(context, config) {
             recentTurnMap,
             cooldownTurns,
             excludedInTurn,
-            tagsPerComment,
-            baseComment,
+            tagsPerComment: effectiveTagsPerComment,
+            baseComment: effectiveBaseComment,
             antiDuplicate,
             allowEmojis,
             usedSet: usedCommentsSet,
@@ -1223,10 +1654,9 @@ function crearYEjecutarTareaPost(context, config) {
 
           let publishOutcome = { type: 'none' };
 
-          // Adquirir turno exclusivo de teclado para escribir y publicar sin solaparse con otro post
           await acquireTypingTurn(job, async () => {
-            job.phaseMessage = `✍️ Escribiendo #${i}/${totalComments}: "${commentToSend}"`;
-            console.log(`\n✍️ [Post #${jobId} — ${i}/${totalComments}] Escribiendo: "${commentToSend}"`);
+            job.phaseMessage = `✍️ Escribiendo #${i}/${totalComments} (${accMeta.label}): "${commentToSend}"`;
+            console.log(`\n✍️ [Post #${jobId} (${accMeta.label}) — ${i}/${totalComments}] Escribiendo: "${commentToSend}"`);
 
             publishOutcome = await publicarUnComentarioEnPagina(
               jobPage,
@@ -1234,7 +1664,8 @@ function crearYEjecutarTareaPost(context, config) {
               selectedUsers,
               minDelay,
               maxDelay,
-              () => job.cancelRequested
+              () => job.cancelRequested,
+              simulateTypos
             );
           });
 
@@ -1245,19 +1676,19 @@ function crearYEjecutarTareaPost(context, config) {
             lastCombinationKey = combinationKey;
             consecutiveRateLimits = 0;
 
-            // Actualizar el turno en que cada usuario fue etiquetado (para el Cooldown de Ocasionales)
             for (const u of selectedUsers) {
               recentTurnMap.set(normalizeHandle(u), i);
             }
+          } else if (publishOutcome.type === 'giveaway_closed') {
+            throw new Error(publishOutcome.alertText);
           } else if (
             publishOutcome.type === 'mention_blocked' ||
             publishOutcome.type === 'generic_post_fail'
           ) {
             console.warn(
-              `⚠️ [Post #${jobId}] Contingencia detectada al etiquetar (${selectedUsers.join(', ')}): ${publishOutcome.alertText}`
+              `⚠️ [Post #${jobId}] Contingencia al etiquetar (${selectedUsers.join(', ')}): ${publishOutcome.alertText}`
             );
 
-            // Identificar quién provocó la alerta y moverlo a Ocasionales con peso mínimo (sin borrarlo)
             if (publishOutcome.explicitUsers && publishOutcome.explicitUsers.length > 0) {
               for (const culprit of publishOutcome.explicitUsers) {
                 demoteUserToOccasionalMinWeight(culprit, publishOutcome.alertText);
@@ -1291,12 +1722,7 @@ function crearYEjecutarTareaPost(context, config) {
                 'Instagram mantuvo el aviso de límite de frecuencia tras 3 pausas seguidas. Se detuvo por seguridad.'
               );
             }
-            const recoverySec = getRandomInt(300, 420); // 5 a 7 minutos de enfriamiento de emergencia
-            console.warn(
-              `🛡️ [Post #${jobId}] Aviso temporal de frecuencia detectado. Aplicando enfriamiento de emergencia de ${Math.round(
-                recoverySec / 60
-              )} min antes de reintentar...`
-            );
+            const recoverySec = getRandomInt(300, 420);
             await sleepJobWithCountdown(
               job,
               recoverySec,
@@ -1306,9 +1732,6 @@ function crearYEjecutarTareaPost(context, config) {
         }
 
         if (!publishedSuccessfully) {
-          console.warn(
-            `⚠️ [Post #${jobId}] No se pudo publicar el turno #${i} tras 3 intentos de contingencia. Pasando al siguiente turno...`
-          );
           continue;
         }
 
@@ -1334,27 +1757,19 @@ function crearYEjecutarTareaPost(context, config) {
 
         GLOBAL_LOGS.push({
           jobId,
+          accountLabel: accMeta.label,
           index: i,
           time: new Date().toLocaleTimeString(),
           comment: finalCommentSent,
           postShort: postUrl.replace(/^https?:\/\/(www\.)?instagram\.com/i, ''),
         });
 
-        console.log(`✅ [Post #${jobId} — ${i}/${totalComments}] Comentario publicado.`);
-
-        if (i >= totalComments) {
-          break;
-        }
+        if (i >= totalComments) break;
 
         if (batchSize > 0 && i % batchSize === 0) {
           const pauseSeconds = getRandomInt(
             Math.round(minBatchPauseMin * 60),
             Math.round(maxBatchPauseMin * 60)
-          );
-          console.log(
-            `☕ [Post #${jobId}] Lote de ${batchSize} completado (${i}/${totalComments}). Descanso de ${Math.round(
-              pauseSeconds / 60
-            )} min...`
           );
           await sleepJobWithCountdown(
             job,
@@ -1363,7 +1778,6 @@ function crearYEjecutarTareaPost(context, config) {
           );
         } else {
           const waitSeconds = getRandomInt(minIntervalSec, maxIntervalSec);
-          console.log(`⏱️ [Post #${jobId}] Esperando ${waitSeconds}s para el siguiente comentario...`);
           await sleepJobWithCountdown(
             job,
             waitSeconds,
@@ -1372,13 +1786,21 @@ function crearYEjecutarTareaPost(context, config) {
         }
       }
 
-      await context.storageState({ path: CONFIG.sessionFile }).catch(() => {});
+      await context.storageState({ path: sessionPath }).catch(() => {});
       job.phaseMessage = `🎉 ¡Completado! ${job.completed} de ${job.total} comentarios enviados.`;
-      console.log(`\n🎉 [Post #${jobId}] ¡Tanda completada exitosamente!`);
+
+      await sendTelegramNotification(
+        `🎉 ¡Tanda Finalizada! (Post #${jobId} — ${accMeta.label})\n` +
+        `✅ Enviados: ${job.completed}/${job.total}\n` +
+        `🎟️ Tus boletos en el post: ${job.myTotalInPost}\n` +
+        `🎯 Probabilidad real de ganar: ${job.probabilities.estimatedRealPercent}%`
+      );
     } catch (error) {
       job.error = error.message;
       job.phaseMessage = `🛑 Detenido: ${error.message}`;
       console.error(`\n❌ [Post #${jobId}] Detenido: ${error.message}`);
+
+      await sendTelegramNotification(`🛑 Post #${jobId} (${accMeta.label}) detenido:\n${error.message}`);
 
       if (job.page && !job.page.isClosed()) {
         await job.page.screenshot({ path: CONFIG.errorScreenshot, fullPage: true }).catch(() => {});
@@ -1391,10 +1813,6 @@ function crearYEjecutarTareaPost(context, config) {
   return jobId;
 }
 
-/**
- * Minimiza la ventana del navegador a la barra de tareas de Windows usando CDP
- * para que el usuario pueda usar su PC sin interrupciones.
- */
 async function minimizeBrowserWindow(page) {
   try {
     if (!page || page.isClosed()) return;
@@ -1412,7 +1830,12 @@ async function minimizeBrowserWindow(page) {
 // Servidor Local para la Ventana del Panel de Control y el Dashboard
 // ============================================================================
 function startControlServer({
+  browser,
   onStartBatch,
+  onAnalyzePostUrl,
+  onAddAccountAndLogin,
+  onSaveAccountSession,
+  onDeleteAccount,
   onStopBatch,
   onFocusJob,
   onOpenDashboard,
@@ -1448,6 +1871,8 @@ function startControlServer({
               hasSession: fs.existsSync(CONFIG.sessionFile),
               savedUsers: loadSavedUsers(),
               userGroups: loadSavedUsersGroups(),
+              accounts: getAccountStatusList(),
+              telegram: PANEL_CONFIG.telegram,
             })
           );
           return;
@@ -1497,11 +1922,118 @@ function startControlServer({
           return;
         }
 
+        // Endpoint para analizar reglas y fecha límite de un post con 1 clic en el Panel
+        if (req.method === 'POST' && req.url === '/api/analyze-post') {
+          let body = '';
+          req.on('data', (chunk) => { body += chunk; });
+          req.on('end', async () => {
+            try {
+              const { postUrl } = JSON.parse(body || '{}');
+              const analysis = await onAnalyzePostUrl(postUrl);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true, analysis }));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: false, error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // Endpoints de Multicuentas desde el Panel de Control
+        if (req.method === 'POST' && req.url === '/api/accounts/add') {
+          let body = '';
+          req.on('data', (chunk) => { body += chunk; });
+          req.on('end', async () => {
+            try {
+              const { label } = JSON.parse(body || '{}');
+              const result = await onAddAccountAndLogin(label);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true, ...result, accounts: getAccountStatusList() }));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: false, error: err.message }));
+            }
+          });
+          return;
+        }
+
+        if (req.method === 'POST' && req.url === '/api/accounts/save-session') {
+          let body = '';
+          req.on('data', (chunk) => { body += chunk; });
+          req.on('end', async () => {
+            try {
+              const { accountId } = JSON.parse(body || '{}');
+              await onSaveAccountSession(accountId);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true, accounts: getAccountStatusList() }));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: false, error: err.message }));
+            }
+          });
+          return;
+        }
+
+        if (req.method === 'POST' && req.url === '/api/accounts/delete') {
+          let body = '';
+          req.on('data', (chunk) => { body += chunk; });
+          req.on('end', async () => {
+            try {
+              const { accountId } = JSON.parse(body || '{}');
+              await onDeleteAccount(accountId);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true, accounts: getAccountStatusList() }));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: false, error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // Endpoints de Telegram desde el Panel de Control
+        if (req.method === 'POST' && req.url === '/api/telegram/save') {
+          let body = '';
+          req.on('data', (chunk) => { body += chunk; });
+          req.on('end', async () => {
+            try {
+              const { botToken, chatId, enabled, sendTest } = JSON.parse(body || '{}');
+              PANEL_CONFIG.telegram = {
+                botToken: String(botToken || '').trim(),
+                chatId: String(chatId || '').trim(),
+                enabled: Boolean(enabled),
+              };
+              savePanelConfig(PANEL_CONFIG);
+
+              if (sendTest) {
+                const testRes = await sendTelegramNotification(
+                  '✅ ¡Conexión exitosa con tu Instagram Multi-Post Bot!\nYa puedes recibir alertas y enviar links de sorteos por aquí.',
+                  PANEL_CONFIG.telegram.botToken,
+                  PANEL_CONFIG.telegram.chatId
+                );
+                if (!testRes.ok) {
+                  throw new Error(testRes.error);
+                }
+              }
+
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true, telegram: PANEL_CONFIG.telegram }));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: false, error: err.message }));
+            }
+          });
+          return;
+        }
+
         if (req.method === 'GET' && req.url === '/api/status') {
           const jobsSummary = Array.from(ACTIVE_JOBS.values())
             .sort((a, b) => b.id - a.id)
             .map((j) => ({
               id: j.id,
+              accountId: j.accountId,
+              accountLabel: j.accountLabel,
               postUrl: j.postUrl,
               baseComment: j.baseComment,
               tagsPerComment: j.tagsPerComment,
@@ -1512,6 +2044,7 @@ function startControlServer({
               postTotalComments: j.postTotalComments,
               myTotalInPost: j.myTotalInPost,
               probabilities: j.probabilities,
+              detectedRulesSummary: j.detectedRulesSummary,
               phaseMessage: j.phaseMessage,
               error: j.error,
             }));
@@ -1524,6 +2057,7 @@ function startControlServer({
               analytics: ANALYTICS,
               savedUsers: loadSavedUsers(),
               userGroups: loadSavedUsersGroups(),
+              accounts: getAccountStatusList(),
             })
           );
           return;
@@ -1583,9 +2117,9 @@ function startControlServer({
           req.on('end', async () => {
             try {
               const payload = JSON.parse(body || '{}');
-              const jobId = onStartBatch(payload);
+              const jobIds = onStartBatch(payload);
               res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ ok: true, jobId }));
+              res.end(JSON.stringify({ ok: true, jobId: jobIds[0], jobIds }));
             } catch (err) {
               res.writeHead(400, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ ok: false, error: err.message }));
@@ -1671,7 +2205,6 @@ function startControlServer({
 // ============================================================================
 (async () => {
   let browser = null;
-  let context = null;
   let igPage = null;
   let panelPage = null;
   let dashboardPage = null;
@@ -1701,26 +2234,82 @@ function startControlServer({
       console.log('🌐 Usando navegador Chromium de Playwright.');
     }
 
-    const hasSessionFile = fs.existsSync(CONFIG.sessionFile);
-    const contextOptions = {
-      viewport: CONFIG.viewport,
-    };
-
-    if (hasSessionFile) {
-      console.log(`📂 Sesión encontrada (${path.basename(CONFIG.sessionFile)}). Inyectando storageState...`);
-      contextOptions.storageState = CONFIG.sessionFile;
-    }
-
-    context = await browser.newContext(contextOptions);
+    const mainAccount = await getOrCreateAccountContext(browser, 'principal');
+    const context = mainAccount.context;
     igPage = await context.newPage();
+    mainAccount.loginPage = igPage;
+
+    const hasSessionFile = fs.existsSync(CONFIG.sessionFile);
 
     let resolveExit;
     const exitPromise = new Promise((resolve) => {
       resolveExit = resolve;
     });
 
+    const launchBatchWithAccounts = (payload) => {
+      const targetAccount = payload.accountId || 'principal';
+      if (targetAccount === 'ALL') {
+        const connectedAccounts = getAccountStatusList().filter((a) => a.hasSession);
+        const accountsToRun = connectedAccounts.length > 0 ? connectedAccounts : [{ id: 'principal' }];
+        return accountsToRun.map((acc) =>
+          crearYEjecutarTareaPost(browser, { ...payload, accountId: acc.id })
+        );
+      }
+      return [crearYEjecutarTareaPost(browser, payload)];
+    };
+
     const { server, url: panelUrl } = await startControlServer({
-      onStartBatch: (payload) => crearYEjecutarTareaPost(context, payload),
+      browser,
+      onStartBatch: launchBatchWithAccounts,
+      onAnalyzePostUrl: async (postUrl) => {
+        const tempPage = await context.newPage();
+        try {
+          await tempPage.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+          await tempPage.waitForTimeout(2000);
+          const rules = await extractAndAnalyzeGiveawayRules(tempPage);
+          const totalComments = await extractPostCommentCount(tempPage, postUrl);
+          return { ...rules, postTotalComments: totalComments };
+        } finally {
+          await tempPage.close().catch(() => {});
+        }
+      },
+      onAddAccountAndLogin: async (rawLabel) => {
+        const cleanLabel = String(rawLabel || '').trim() || `Cuenta ${PANEL_CONFIG.accounts.length + 1}`;
+        const slug = cleanLabel.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now().toString().slice(-4);
+        const sessionPath = path.join(CONFIG.sessionsDir, `sesion_${slug}.json`);
+
+        PANEL_CONFIG.accounts.push({
+          id: slug,
+          label: cleanLabel,
+          sessionPath,
+        });
+        savePanelConfig(PANEL_CONFIG);
+
+        const accEntry = await getOrCreateAccountContext(browser, slug);
+        const loginTab = await accEntry.context.newPage();
+        accEntry.loginPage = loginTab;
+        await loginTab.bringToFront();
+        await startNonBlockingLogin(loginTab, accEntry.context, sessionPath);
+
+        return { accountId: slug, label: cleanLabel };
+      },
+      onSaveAccountSession: async (accountId = 'principal') => {
+        const accEntry = await getOrCreateAccountContext(browser, accountId);
+        await accEntry.context.storageState({ path: accEntry.sessionPath });
+        console.log(`💾 Sesión guardada para cuenta "${accEntry.label}": ${accEntry.sessionPath}`);
+      },
+      onDeleteAccount: async (accountId) => {
+        if (!accountId || accountId === 'principal') {
+          throw new Error('La cuenta principal no se puede eliminar.');
+        }
+        PANEL_CONFIG.accounts = PANEL_CONFIG.accounts.filter((a) => a.id !== accountId);
+        savePanelConfig(PANEL_CONFIG);
+        if (ACCOUNT_CONTEXTS.has(accountId)) {
+          const entry = ACCOUNT_CONTEXTS.get(accountId);
+          await entry.context.close().catch(() => {});
+          ACCOUNT_CONTEXTS.delete(accountId);
+        }
+      },
       onStopBatch: ({ jobId, all }) => {
         if (all) {
           for (const job of ACTIVE_JOBS.values()) {
@@ -1751,7 +2340,7 @@ function startControlServer({
       },
       onSaveSession: async () => {
         await context.storageState({ path: CONFIG.sessionFile });
-        console.log(`💾 Sesión guardada manualmente en: ${CONFIG.sessionFile}`);
+        console.log(`💾 Sesión principal guardada en: ${CONFIG.sessionFile}`);
       },
       onFocusIg: async () => {
         if (igPage && !igPage.isClosed()) {
@@ -1770,6 +2359,32 @@ function startControlServer({
     });
     controlServer = server;
 
+    // Iniciar bucle de control remoto por Telegram si el usuario lo activa
+    startTelegramRemoteControlLoop(
+      (remoteUrl, remoteMsg) => {
+        const groups = loadSavedUsersGroups();
+        launchBatchWithAccounts({
+          postUrl: remoteUrl,
+          accountId: 'ALL',
+          frequentUsers: groups.frequentUsers,
+          occasionalUsers: groups.occasionalUsers,
+          baseComment: remoteMsg || '',
+          tagsPerComment: 2,
+          totalComments: 100,
+          autoDetectRules: true,
+          autoLikeFollow: true,
+          simulateTypos: true,
+          antiDuplicate: true,
+          allowEmojis: true,
+        });
+      },
+      () => {
+        for (const job of ACTIVE_JOBS.values()) {
+          job.cancelRequested = true;
+        }
+      }
+    );
+
     panelPage = await context.newPage();
     await panelPage.goto(panelUrl, { waitUntil: 'domcontentloaded' });
 
@@ -1784,7 +2399,7 @@ function startControlServer({
       if (igPage.url().includes('/accounts/login')) {
         console.warn('⚠️ La sesión guardada expiró. Abriendo pestaña de Instagram para iniciar sesión...');
         await igPage.bringToFront();
-        await startNonBlockingLogin(igPage, context, async () => {
+        await startNonBlockingLogin(igPage, context, CONFIG.sessionFile, async () => {
           if (panelPage && !panelPage.isClosed()) {
             await panelPage.reload().catch(() => {});
             await panelPage.bringToFront().catch(() => {});
@@ -1798,7 +2413,7 @@ function startControlServer({
       }
     } else {
       await igPage.bringToFront();
-      await startNonBlockingLogin(igPage, context, async () => {
+      await startNonBlockingLogin(igPage, context, CONFIG.sessionFile, async () => {
         if (panelPage && !panelPage.isClosed()) {
           await panelPage.reload().catch(() => {});
           await panelPage.bringToFront().catch(() => {});
@@ -1811,15 +2426,14 @@ function startControlServer({
     console.error(`\n❌ Error crítico: ${error.message}`);
     if (igPage && !igPage.isClosed()) {
       await igPage.screenshot({ path: CONFIG.errorScreenshot, fullPage: true }).catch(() => {});
-      console.error(`📸 Captura de pantalla del error guardada en: ${CONFIG.errorScreenshot}`);
     }
     process.exitCode = 1;
   } finally {
     if (controlServer) {
       controlServer.close();
     }
-    if (context) {
-      await context.close().catch(() => {});
+    for (const entry of ACCOUNT_CONTEXTS.values()) {
+      await entry.context.close().catch(() => {});
     }
     if (browser) {
       console.log('🔒 Cerrando navegador...');

@@ -581,6 +581,10 @@
               const cfg = p.savedConfig || {};
               const msgSaved = cfg.baseComment ? `"${cfg.baseComment.replace(/</g, '&lt;')}"` : '(Solo @etiquetados)';
               const isRunningNow = runningUrls.has(p.postUrl);
+              const rulesTxt =
+                p.detectedRules && Array.isArray(p.detectedRules.summary) && p.detectedRules.summary.length > 0
+                  ? `<div style="font-size: 0.76rem; color: #fbbf24; margin-bottom: 4px;">🔍 ${p.detectedRules.summary.join(' • ')}</div>`
+                  : '';
 
               const thumbHtml = p.thumbnail
                 ? `<img src="${p.thumbnail}" alt="Miniatura del Post" />`
@@ -605,6 +609,7 @@
                       }
                     </div>
                     <div class="post-caption">${(p.caption || 'Sorteo guardado en memoria').replace(/</g, '&lt;')}</div>
+                    ${rulesTxt}
 
                     <div class="post-stats-row">
                       <div>

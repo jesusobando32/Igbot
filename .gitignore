@@ -1,6 +1,8 @@
 node_modules/
 .env
 sesion_ig.json
+sesiones/
+config_panel.json
 estadisticas.json
 error_screenshot.png
 *.log
