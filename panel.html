@@ -890,10 +890,10 @@
       div.className = 'post-entry';
       div.innerHTML = `
         <div class="post-entry-header">
-          <span class="post-entry-title">📌 Sorteo a Comentar</span>
+          <span class="post-entry-title">📌 Sorteo a Comentar <span class="auto-analyze-badge" style="font-size: 0.75rem; font-weight: 400; color: var(--muted);">— Pega el link y analizará las reglas automáticamente</span></span>
           <div style="display: flex; gap: 6px;">
-            <button type="button" class="btn-secondary analyze-row-btn" style="padding: 4px 10px; font-size: 0.75rem;">
-              🔍 Analizar Reglas y Fecha del Post
+            <button type="button" class="btn-secondary analyze-row-btn" style="padding: 4px 10px; font-size: 0.74rem;" title="Volver a analizar descripción">
+              🔄 Re-analizar
             </button>
             ${
               postsBuilder.children.length > 0
@@ -904,12 +904,12 @@
         </div>
         <div class="post-entry-grid">
           <div>
-            <label>🔗 Link del Post / Reel</label>
-            <input type="text" class="row-url" placeholder="https://www.instagram.com/p/XXXX/" value="${initialUrl}" />
+            <label>🔗 Link del Post / Reel (Auto-analiza al pegar)</label>
+            <input type="text" class="row-url" placeholder="Pega aquí https://www.instagram.com/p/XXXX/" value="${initialUrl}" />
           </div>
           <div>
-            <label>💬 Mensaje (Opcional o separa con |)</label>
-            <input type="text" class="row-msg" placeholder="Vacío = solo @usuarios" value="${initialMsg}" />
+            <label>💬 Respuesta / Mensaje (Opcional o separa con |)</label>
+            <input type="text" class="row-msg" placeholder="Si pide responder algo, escríbelo aquí" value="${initialMsg}" />
           </div>
           <div>
             <label>👤 Etiquetar</label>
@@ -924,7 +924,7 @@
             <input type="datetime-local" class="row-schedule" />
           </div>
         </div>
-        <div class="rules-detected-line"></div>
+        <div class="rules-detected-line" style="margin-top: 10px; padding: 11px 13px; background: #181b23; border: 1px solid var(--border); border-radius: 10px; line-height: 1.5;"></div>
         <div class="preview-line"></div>
       `;
 
@@ -936,18 +936,29 @@
         });
       }
 
+      const urlInput = div.querySelector('.row-url');
       const analyzeBtn = div.querySelector('.analyze-row-btn');
       const rulesLine = div.querySelector('.rules-detected-line');
-      analyzeBtn.addEventListener('click', async () => {
-        const postUrl = div.querySelector('.row-url').value.trim();
-        if (!postUrl) {
-          showStatus('error', '⚠️ Pega primero el link del post para analizar sus reglas.');
+      let lastAnalyzedUrl = '';
+      let analyzeTimer = null;
+
+      const runAnalysisForRow = async (force = false) => {
+        const postUrl = urlInput.value.trim();
+        const isValidIg = /^https?:\/\/(www\.)?instagram\.com\/(p|reel|tv)\/[\w-]+\/?/i.test(postUrl);
+        if (!isValidIg) {
+          if (force) {
+            showStatus('error', '⚠️ Pega un link válido de post o reel de Instagram.');
+          }
           return;
         }
+        if (!force && postUrl === lastAnalyzedUrl) return;
+        lastAnalyzedUrl = postUrl;
+
         analyzeBtn.disabled = true;
         analyzeBtn.textContent = '⏳ Analizando...';
         rulesLine.style.display = 'block';
-        rulesLine.textContent = '🔍 Leyendo descripción del sorteo en Instagram...';
+        rulesLine.style.color = '#fbbf24';
+        rulesLine.innerHTML = '🔍 <strong>Analizando el post en Instagram y filtrando el relleno...</strong>';
 
         try {
           const res = await fetch('/api/analyze-post', {
@@ -958,6 +969,8 @@
           const data = await res.json();
           if (data.ok && data.analysis) {
             const a = data.analysis;
+            const d = a.digest || {};
+
             if (a.detectedTagsCount !== null) {
               div.querySelector('.row-tags').value = a.detectedTagsCount;
             }
@@ -966,14 +979,33 @@
             }
             updateAllPreviews();
 
-            const parts = [];
-            if (a.summary && a.summary.length > 0) parts.push(...a.summary);
-            if (a.postTotalComments) parts.push(`💬 ${a.postTotalComments.toLocaleString()} comentarios actuales`);
-            rulesLine.style.color = a.isClosed ? '#f87171' : '#34d399';
-            rulesLine.textContent =
-              parts.length > 0
-                ? `✅ Reglas detectadas: ${parts.join(' • ')}`
-                : 'ℹ️ No se detectaron restricciones especiales en el texto (listo para comentar).';
+            const escapeHtml = (s) => String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const statusHeader = a.isClosed
+              ? `<div style="color: #f87171; font-weight: 700; margin-bottom: 6px;">🛑 SORTEO CERRADO / VENCIDO: ${escapeHtml(a.closeReason)}</div>`
+              : `<div style="color: #34d399; font-weight: 700; margin-bottom: 6px;">✅ Resumen Limpio del Sorteo (Sin Relleno) ${a.author ? '— ' + escapeHtml(a.author) : ''} ${a.postTotalComments ? `(${a.postTotalComments.toLocaleString()} comentarios actuales)` : ''}</div>`;
+
+            rulesLine.style.color = '#e2e8f0';
+            rulesLine.innerHTML = `
+              ${statusHeader}
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8rem;">
+                <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); padding: 7px 10px; border-radius: 8px;">
+                  <strong style="color: #fbbf24;">❓ Qué responder / escribir:</strong><br />
+                  <span>${escapeHtml(d.questionOrPrompt || 'Solo etiquetar (no pide pregunta)')}</span>
+                </div>
+                <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); padding: 7px 10px; border-radius: 8px;">
+                  <strong style="color: #38bdf8;">👥 Personas a etiquetar:</strong><br />
+                  <span>${escapeHtml(d.taggingRule || 'Por defecto 2 amigos')}</span>
+                </div>
+                <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); padding: 7px 10px; border-radius: 8px;">
+                  <strong style="color: #34d399;">➕ Seguir y requisitos:</strong><br />
+                  <span>${escapeHtml(d.followAndActionsRule || 'Dar Like y seguir al creador')}</span>
+                </div>
+                <div style="background: rgba(167, 139, 250, 0.08); border: 1px solid rgba(167, 139, 250, 0.25); padding: 7px 10px; border-radius: 8px;">
+                  <strong style="color: #a78bfa;">📅 Cuándo termina / cierra:</strong><br />
+                  <span>${escapeHtml(d.deadlineRule || 'No especifica fecha en el texto')}</span>
+                </div>
+              </div>
+            `;
           } else {
             rulesLine.textContent = '⚠️ No se pudo leer el post: ' + (data.error || '');
           }
@@ -981,9 +1013,23 @@
           rulesLine.textContent = '⚠️ Error al analizar: ' + err.message;
         } finally {
           analyzeBtn.disabled = false;
-          analyzeBtn.textContent = '🔍 Analizar Reglas y Fecha del Post';
+          analyzeBtn.textContent = '🔄 Re-analizar';
         }
+      };
+
+      // Disparar automáticamente al pegar el link o terminar de escribirlo
+      urlInput.addEventListener('paste', () => {
+        setTimeout(() => runAnalysisForRow(false), 150);
       });
+      urlInput.addEventListener('input', () => {
+        if (analyzeTimer) clearTimeout(analyzeTimer);
+        analyzeTimer = setTimeout(() => runAnalysisForRow(false), 600);
+      });
+      analyzeBtn.addEventListener('click', () => runAnalysisForRow(true));
+
+      if (initialUrl) {
+        setTimeout(() => runAnalysisForRow(false), 300);
+      }
 
       div.querySelectorAll('input').forEach((inp) => {
         inp.addEventListener('input', updateAllPreviews);

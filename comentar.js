@@ -758,14 +758,15 @@ const WORD_NUMBERS_ES = {
 };
 
 /**
- * Analiza el texto/descripción de un post de sorteo para detectar:
- * 1. Cuántos amigos pide etiquetar (`detectedTagsCount`).
- * 2. Si pide comentar una palabra o frase específica (`detectedKeyword`).
- * 3. Si el sorteo ya fue anunciado como cerrado (`isClosed`, `closeReason`).
- * 4. Si menciona fecha límite ("hasta el 20 de noviembre", "sorteo el 18/11") y si ya venció.
+ * Analiza el texto/descripción de un post de sorteo eliminando todo el relleno publicitario
+ * y extrayendo únicamente las 4 reglas accionables que necesitas saber:
+ * 1. ❓ Qué responder o escribir (`questionOrPrompt`, `detectedKeyword`)
+ * 2. 👥 Cuántas personas etiquetar y condiciones (`taggingRule`, `detectedTagsCount`)
+ * 3. ➕ A quién seguir y qué acciones hacer (`followAndActionsRule`, `accountsToFollow`)
+ * 4. 📅 Cuándo termina / cierra el sorteo (`deadlineRule`, `deadlineText`, `isClosed`)
  */
 function parseGiveawayRulesFromCaption(captionText = '') {
-  const clean = String(captionText || '');
+  const clean = String(captionText || '').replace(/\r/g, '');
   const result = {
     detectedTagsCount: null,
     detectedKeyword: '',
@@ -774,9 +775,22 @@ function parseGiveawayRulesFromCaption(captionText = '') {
     deadlineText: '',
     deadlineIso: '',
     summary: [],
+    digest: {
+      questionOrPrompt: '',
+      taggingRule: '',
+      followAndActionsRule: '',
+      accountsToFollow: [],
+      deadlineRule: '',
+    },
   };
 
-  if (!clean) return result;
+  if (!clean.trim()) return result;
+
+  // Dividir la descripción en líneas/oraciones limpias para filtrar el relleno
+  const lines = clean
+    .split(/\n+|(?<=[.!?])\s+/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 3 && !/^(\.\s*)+$/.test(l));
 
   // 1. Verificar frases explícitas de sorteo cerrado / finalizado
   const closedRegex =
@@ -793,7 +807,7 @@ function parseGiveawayRulesFromCaption(captionText = '') {
   const currentYear = now.getFullYear();
 
   const dateEsRegex =
-    /(?:hasta\s+el|cierra\s+el|finaliza\s+el|termina\s+el|sorteo\s+el|ganador(?:es)?\s+el|anunciamos\s+el|válido\s+hasta\s+el)\s+(?:día\s+|lunes\s+|martes\s+|miércoles\s+|miercoles\s+|jueves\s+|viernes\s+|sábado\s+|sabado\s+|domingo\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de(?:l)?\s+(\d{4}))?/i;
+    /(?:hasta\s+el|cierra\s+el|finaliza\s+el|termina\s+el|sorteo\s+el|ganador(?:es)?\s+el|anunciamos\s+el|válido\s+hasta\s+el|valido\s+hasta\s+el|se\s+sortea\s+el)\s+(?:día\s+|dia\s+|lunes\s+|martes\s+|miércoles\s+|miercoles\s+|jueves\s+|viernes\s+|sábado\s+|sabado\s+|domingo\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de(?:l)?\s+(\d{4}))?/i;
 
   const dateEsMatch = clean.match(dateEsRegex);
   if (dateEsMatch) {
@@ -812,13 +826,12 @@ function parseGiveawayRulesFromCaption(captionText = '') {
         result.closeReason = `La fecha límite del sorteo venció el ${result.deadlineText}`;
         result.summary.push(`🛑 Sorteo vencido (${result.deadlineText})`);
       } else {
-        result.summary.push(`📅 Fecha límite detectada: hasta el ${result.deadlineText}`);
+        result.summary.push(`📅 Termina el ${result.deadlineText}`);
       }
     }
   } else {
-    // Formato numérico: "hasta el 25/11" o "finaliza el 25/11/2026"
     const numericDateRegex =
-      /(?:hasta\s+el|cierra\s+el|finaliza\s+el|termina\s+el|sorteo\s+el)\s+(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/i;
+      /(?:hasta\s+el|cierra\s+el|finaliza\s+el|termina\s+el|sorteo\s+el|ganador(?:es)?\s+el)\s+(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/i;
     const numMatch = clean.match(numericDateRegex);
     if (numMatch) {
       const day = parseInt(numMatch[1], 10);
@@ -836,13 +849,25 @@ function parseGiveawayRulesFromCaption(captionText = '') {
           result.closeReason = `La fecha límite del sorteo venció el ${result.deadlineText}`;
           result.summary.push(`🛑 Sorteo vencido (${result.deadlineText})`);
         } else {
-          result.summary.push(`📅 Fecha límite detectada: hasta el ${result.deadlineText}`);
+          result.summary.push(`📅 Termina el ${result.deadlineText}`);
         }
       }
     }
   }
 
-  // 3. Detectar cuántos amigos pide etiquetar ("etiqueta a 2 amigos", "menciona a tres personas", "tag 2 friends")
+  // Extraer la oración limpia que habla de la fecha de cierre / anuncio de ganador
+  const deadlineLines = lines.filter((l) =>
+    /(?:hasta\s+el|cierra|finaliza|termina|ganador|anunciaremos|anunciamos|sortea|sorteo\s+el)/i.test(l)
+  );
+  if (deadlineLines.length > 0) {
+    result.digest.deadlineRule = deadlineLines.slice(0, 2).join(' — ');
+  } else if (result.deadlineText) {
+    result.digest.deadlineRule = `Termina el ${result.deadlineText}`;
+  } else {
+    result.digest.deadlineRule = 'No especifica fecha exacta en el texto';
+  }
+
+  // 3. Detectar cuántos amigos pide etiquetar y extraer la línea exacta de etiquetado
   const mentionRuleRegex =
     /(?:etiqueta(?:r|ndo)?|menciona(?:r|ndo)?|tag(?:gear|ging)?|comenta(?:r)?\s+etiquetando)\s+(?:a\s+)?(\d+|un|uno|una|dos|tres|cuatro|cinco|one|two|three|four|five)\s+(?:amigo|persona|cuenta|usuario|friend|people)/i;
   const mentionMatch = clean.match(mentionRuleRegex);
@@ -851,37 +876,117 @@ function parseGiveawayRulesFromCaption(captionText = '') {
     const count = WORD_NUMBERS_ES[rawNum] || parseInt(rawNum, 10);
     if (count >= 1 && count <= 10) {
       result.detectedTagsCount = count;
-      result.summary.push(`👤 Pide etiquetar a ${count} amigo(s)`);
+      result.summary.push(`👤 Etiquetar a ${count} amigo(s)`);
     }
   }
 
-  // 4. Detectar si pide comentar una palabra clave entre comillas ('comenta la palabra "QUIERO"')
+  const tagLines = lines.filter((l) =>
+    /(?:etiqueta|menciona|tag|amigos|personas\s+en\s+los\s+comentarios)/i.test(l)
+  );
+  if (tagLines.length > 0) {
+    result.digest.taggingRule = tagLines.slice(0, 2).join(' — ');
+  } else if (result.detectedTagsCount) {
+    result.digest.taggingRule = `Etiquetar a ${result.detectedTagsCount} persona(s) por comentario`;
+  } else {
+    result.digest.taggingRule = 'No especifica mínimo (por defecto 2 etiquetados)';
+  }
+
+  // 4. Detectar si pide comentar una palabra clave o responder una pregunta en el comentario
   const keywordRegex =
-    /(?:comenta(?:r)?|escribe|escribir|pon(?:er)?)\s+(?:la\s+palabra\s+|la\s+frase\s+)?["“«']([^"”»'\n]{2,28})["”»']/i;
+    /(?:comenta(?:r)?|escribe|escribir|pon(?:er)?|responde(?:r)?)\s+(?:la\s+palabra\s+|la\s+frase\s+)?["“«']([^"”»'\n]{2,35})["”»']/i;
   const kwMatch = clean.match(keywordRegex);
   if (kwMatch) {
     result.detectedKeyword = kwMatch[1].trim();
-    result.summary.push(`💬 Pide comentar: "${result.detectedKeyword}"`);
+    result.summary.push(`💬 Palabra clave: "${result.detectedKeyword}"`);
+  }
+
+  // Buscar líneas que pidan responder una pregunta o escribir algo en los comentarios
+  const questionOrCommentLines = lines.filter((l) => {
+    const hasCommentVerb =
+      /(?:responde|cuéntanos|cuentanos|dinos|escribe|comenta|pon\s+en\s+los\s+comentarios|cuál\s+es|cual\s+es|qué\s+prefieres|que\s+prefieres|por\s+qué|por\s+que|qué\s+te\s+gustaría)/i.test(
+        l
+      );
+    const isDirectQuestion = /[¿?]/.test(l) && /(?:cuál|cual|qué|que|quién|quien|cómo|como|dónde|donde|por\s+qué|favorit)/i.test(l);
+    return hasCommentVerb || isDirectQuestion;
+  });
+
+  if (result.detectedKeyword) {
+    result.digest.questionOrPrompt = `Escribir la palabra exacta: "${result.detectedKeyword}"`;
+  } else if (questionOrCommentLines.length > 0) {
+    result.digest.questionOrPrompt = questionOrCommentLines.slice(0, 2).join(' — ');
+    result.summary.push(`❓ Pide responder/comentar algo (revisa el resumen abajo)`);
+  } else {
+    result.digest.questionOrPrompt = 'No pide responder pregunta (puedes enviar solo los @etiquetados)';
+  }
+
+  // 5. Extraer cuentas a seguir (@cuentas mencionadas en la descripción) y pasos de Like/Seguir
+  const mentionedHandles = [...new Set((clean.match(/@[a-zA-Z0-9._]{2,30}/g) || []).map((h) => h.toLowerCase()))];
+  result.digest.accountsToFollow = mentionedHandles;
+
+  const followLines = lines.filter((l) =>
+    /(?:seguir|sigue|follow|dar\s+like|dale\s+like|me\s+gusta|compartir|guarda)/i.test(l)
+  );
+  if (followLines.length > 0) {
+    result.digest.followAndActionsRule = followLines.slice(0, 2).join(' — ');
+  } else if (mentionedHandles.length > 0) {
+    result.digest.followAndActionsRule = `Seguir a: ${mentionedHandles.join(', ')} y dar Like`;
+  } else {
+    result.digest.followAndActionsRule = 'Seguir a la cuenta del post y dar Like ❤️';
   }
 
   return result;
 }
 
 /**
- * Extrae la descripción completa del post en la página actual y analiza las reglas del sorteo.
+ * Extrae únicamente la descripción real (caption) del post de Instagram
+ * (desde el JSON interno de Relay/Polaris, h1 del artículo o meta description)
+ * sin mezclar comentarios de otros usuarios ni basura del pie de página.
  */
-async function extractAndAnalyzeGiveawayRules(page) {
+async function extractAndAnalyzeGiveawayRules(page, postUrl = '') {
   try {
-    const fullCaption = await page.evaluate(() => {
+    const shortcode = normalizePostKey(postUrl || page.url());
+    const realCaption = await page.evaluate((code) => {
+      // 1. Intentar desde los scripts JSON internos de Instagram ("caption":{"text":"..."})
+      const scripts = Array.from(document.querySelectorAll('script[type="application/json"]'));
+      for (const s of scripts) {
+        const txt = s.textContent || '';
+        if (code && !txt.includes(code)) continue;
+
+        const m1 = txt.match(/"caption"\s*:\s*\{[^{}]*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (m1 && m1[1]) {
+          try {
+            return JSON.parse(`"${m1[1]}"`);
+          } catch {
+            return m1[1];
+          }
+        }
+
+        const m2 = txt.match(/"edge_media_to_caption"\s*:\s*\{\s*"edges"\s*:\s*\[\s*\{\s*"node"\s*:\s*\{\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (m2 && m2[1]) {
+          try {
+            return JSON.parse(`"${m2[1]}"`);
+          } catch {
+            return m2[1];
+          }
+        }
+      }
+
+      // 2. Intentar desde el nodo H1 dentro del artículo (donde Instagram renderiza el caption principal)
+      const h1 = document.querySelector('article h1, main h1');
+      if (h1 && h1.innerText && h1.innerText.trim().length > 10) {
+        return h1.innerText.trim();
+      }
+
+      // 3. Fallback a meta og:description / description
       const metaDesc =
         document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
         document.querySelector('meta[name="description"]')?.getAttribute('content') ||
         '';
-      const articleText = document.querySelector('article, main')?.innerText || '';
-      return `${metaDesc}\n${articleText.slice(0, 3500)}`;
-    });
+      const quoteMatch = metaDesc.match(/:\s*"([\s\S]+)"$/);
+      return quoteMatch ? quoteMatch[1] : metaDesc;
+    }, shortcode);
 
-    return parseGiveawayRulesFromCaption(fullCaption);
+    return parseGiveawayRulesFromCaption(realCaption);
   } catch {
     return parseGiveawayRulesFromCaption('');
   }
@@ -2265,10 +2370,20 @@ function startControlServer({
         const tempPage = await context.newPage();
         try {
           await tempPage.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
-          await tempPage.waitForTimeout(2000);
-          const rules = await extractAndAnalyzeGiveawayRules(tempPage);
+          await tempPage.waitForTimeout(2200);
+          await dismissCookiesModal(tempPage);
+          await dismissPostLoginModals(tempPage);
+          const rules = await extractAndAnalyzeGiveawayRules(tempPage, postUrl);
           const totalComments = await extractPostCommentCount(tempPage, postUrl);
-          return { ...rules, postTotalComments: totalComments };
+          const details = await extractPostDetailsAndThumbnail(tempPage);
+          upsertPostInCatalog(postUrl, {
+            author: details.author,
+            caption: details.caption,
+            thumbnail: details.thumbnail,
+            postTotalComments: totalComments,
+            detectedRules: rules,
+          });
+          return { ...rules, author: details.author, postTotalComments: totalComments };
         } finally {
           await tempPage.close().catch(() => {});
         }
