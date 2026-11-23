@@ -1718,6 +1718,13 @@ function crearYEjecutarTareaPost(browser, config) {
     cancelRequested: false,
     completed: 0,
     total: totalComments,
+    timingConfig: {
+      minIntervalSec,
+      maxIntervalSec,
+      batchSize,
+      minBatchPauseMin,
+      maxBatchPauseMin,
+    },
     postTotalComments: null,
     myTotalInPost: initialMyCount,
     probabilities: { rawPercent: 0, estimatedRealPercent: 0, oneInX: null },
@@ -2295,24 +2302,61 @@ function startControlServer({
         if (req.method === 'GET' && req.url === '/api/status') {
           const jobsSummary = Array.from(ACTIVE_JOBS.values())
             .sort((a, b) => b.id - a.id)
-            .map((j) => ({
-              id: j.id,
-              accountId: j.accountId,
-              accountLabel: j.accountLabel,
-              postUrl: j.postUrl,
-              baseComment: j.baseComment,
-              tagsPerComment: j.tagsPerComment,
-              usersCount: j.usersCount,
-              running: j.running,
-              completed: j.completed,
-              total: j.total,
-              postTotalComments: j.postTotalComments,
-              myTotalInPost: j.myTotalInPost,
-              probabilities: j.probabilities,
-              detectedRulesSummary: j.detectedRulesSummary,
-              phaseMessage: j.phaseMessage,
-              error: j.error,
-            }));
+            .map((j) => {
+              let etaSeconds = 0;
+              if (j.running && j.total > j.completed) {
+                const remaining = j.total - j.completed;
+                const tc = j.timingConfig || {
+                  minIntervalSec: 38,
+                  maxIntervalSec: 75,
+                  batchSize: 10,
+                  minBatchPauseMin: 4,
+                  maxBatchPauseMin: 7,
+                };
+                const avgInterval = (Number(tc.minIntervalSec) + Number(tc.maxIntervalSec)) / 2;
+                const avgTypingAndPost = 10; // ~10s entre tipeo humano y espera de red
+                let batchPausesRemaining = 0;
+                if (tc.batchSize > 0 && remaining > 1) {
+                  for (let idx = j.completed + 1; idx < j.total; idx++) {
+                    if (idx % tc.batchSize === 0) batchPausesRemaining++;
+                  }
+                }
+                const normalWaitsRemaining = Math.max(0, remaining - 1 - batchPausesRemaining);
+                const avgBatchPauseSec =
+                  ((Number(tc.minBatchPauseMin) + Number(tc.maxBatchPauseMin)) / 2) * 60;
+                etaSeconds = Math.round(
+                  remaining * avgTypingAndPost +
+                  normalWaitsRemaining * avgInterval +
+                  batchPausesRemaining * avgBatchPauseSec
+                );
+              }
+              return {
+                id: j.id,
+                accountId: j.accountId,
+                accountLabel: j.accountLabel,
+                postUrl: j.postUrl,
+                baseComment: j.baseComment,
+                tagsPerComment: j.tagsPerComment,
+                usersCount: j.usersCount,
+                running: j.running,
+                completed: j.completed,
+                total: j.total,
+                etaSeconds,
+                etaFinishClock:
+                  etaSeconds > 0
+                    ? new Date(Date.now() + etaSeconds * 1000).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : null,
+                postTotalComments: j.postTotalComments,
+                myTotalInPost: j.myTotalInPost,
+                probabilities: j.probabilities,
+                detectedRulesSummary: j.detectedRulesSummary,
+                phaseMessage: j.phaseMessage,
+                error: j.error,
+              };
+            });
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(

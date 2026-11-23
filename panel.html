@@ -3,105 +3,261 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Instagram Multi-Post & Multi-Account Bot — Panel de Control</title>
+  <title>IG Automation — Control</title>
   <style>
     :root {
-      --bg: #0f1117;
-      --card: #181b23;
-      --border: #2a2f3d;
-      --text: #f1f5f9;
-      --muted: #94a3b8;
-      --accent: #e1306c;
-      --accent-hover: #c13584;
-      --success: #10b981;
-      --error: #ef4444;
-      --warning: #f59e0b;
+      --bg: #09090b;
+      --surface: #111113;
+      --elevated: #18181b;
+      --border: #27272a;
+      --border-strong: #3f3f46;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --subtle: #71717a;
+      --primary: #fafafa;
+      --primary-text: #09090b;
+      --green: #10b981;
+      --amber: #f59e0b;
+      --red: #f43f5e;
+      --blue: #38bdf8;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
     }
 
     body {
-      background-color: var(--bg);
+      background: var(--bg);
       color: var(--text);
+      font-family: var(--sans);
+      font-size: 13.5px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
       min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      padding: 22px 14px;
     }
 
-    .container {
-      width: 100%;
-      max-width: 980px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 24px;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+    .tabular {
+      font-variant-numeric: tabular-nums;
     }
 
-    .header {
+    .mono {
+      font-family: var(--mono);
+    }
+
+    /* Topbar */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: rgba(9, 9, 11, 0.86);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .topbar-inner {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 12px 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 16px;
-      margin-bottom: 18px;
-      gap: 12px;
+      gap: 16px;
       flex-wrap: wrap;
     }
 
-    .title-group h1 {
-      font-size: 1.35rem;
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-mark {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: var(--text);
+      color: var(--bg);
+      display: grid;
+      place-items: center;
       font-weight: 700;
-      background: linear-gradient(90deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      font-size: 12px;
+      letter-spacing: -0.04em;
     }
 
-    .title-group p {
+    .brand-title {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .nav-tabs {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 3px;
+    }
+
+    .nav-tab {
+      background: transparent;
+      border: none;
       color: var(--muted);
-      font-size: 0.84rem;
-      margin-top: 4px;
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+      text-decoration: none;
     }
 
-    .badge {
+    .nav-tab:hover {
+      color: var(--text);
+    }
+
+    .nav-tab.active {
+      background: var(--elevated);
+      color: var(--text);
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-pill {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      padding: 5px 10px;
       border-radius: 999px;
-      background: rgba(16, 185, 129, 0.12);
-      color: var(--success);
-      border: 1px solid rgba(16, 185, 129, 0.3);
+      border: 1px solid var(--border);
+      background: var(--surface);
     }
 
-    .badge.pending {
-      background: rgba(245, 158, 11, 0.12);
-      color: var(--warning);
-      border-color: rgba(245, 158, 11, 0.35);
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
     }
 
-    label {
+    .status-pill.pending .status-dot {
+      background: var(--amber);
+    }
+
+    /* Main Layout */
+    .shell {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 24px 24px 64px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Metrics Strip */
+    .metrics-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    @media (max-width: 780px) {
+      .metrics-strip {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .metric-cell {
+      padding: 14px 18px;
+      border-right: 1px solid var(--border);
+    }
+
+    .metric-cell:last-child {
+      border-right: none;
+    }
+
+    .metric-label {
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--subtle);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 6px;
+    }
+
+    .metric-value {
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .metric-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* Cards & Sections */
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+    }
+
+    .section-head {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 0.84rem;
-      font-weight: 600;
-      margin-bottom: 6px;
-      color: #e2e8f0;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
     }
 
-    .hint {
-      font-size: 0.75rem;
+    .section-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    .section-desc {
+      font-size: 12px;
+      color: var(--subtle);
+      margin-top: 2px;
+    }
+
+    /* Forms */
+    label.field-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 500;
       color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .field-hint {
+      font-size: 11.5px;
+      color: var(--subtle);
       font-weight: 400;
     }
 
@@ -112,47 +268,137 @@
     select,
     textarea {
       width: 100%;
-      background: #0f1117;
+      background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 9px 12px;
+      border-radius: 7px;
+      padding: 8px 11px;
       color: var(--text);
-      font-size: 0.88rem;
+      font-family: var(--sans);
+      font-size: 13px;
       outline: none;
-      transition: border-color 0.2s;
+      transition: border-color 0.15s;
     }
 
     input:focus,
     select:focus,
     textarea:focus {
-      border-color: var(--accent);
+      border-color: var(--border-strong);
     }
 
     textarea {
-      min-height: 88px;
+      min-height: 86px;
       resize: vertical;
-      line-height: 1.45;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.55;
     }
 
-    .panel-box {
-      background: #12151c;
+    /* Buttons */
+    button {
+      font-family: var(--sans);
+      cursor: pointer;
+      border-radius: 7px;
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 7px 13px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+      border: 1px solid transparent;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: var(--primary-text);
+      font-weight: 600;
+      padding: 9px 18px;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #e4e4e7;
+    }
+
+    .btn-ghost {
+      background: var(--elevated);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .btn-ghost:hover:not(:disabled) {
+      border-color: var(--border-strong);
+      background: #202024;
+    }
+
+    .btn-subtle {
+      background: transparent;
+      color: var(--muted);
+      border-color: var(--border);
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .btn-subtle:hover:not(:disabled) {
+      color: var(--text);
+      border-color: var(--border-strong);
+    }
+
+    .btn-danger {
+      background: rgba(244, 63, 94, 0.08);
+      color: #fda4af;
+      border-color: rgba(244, 63, 94, 0.25);
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: rgba(244, 63, 94, 0.16);
+    }
+
+    /* User Groups Grid */
+    .users-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    @media (max-width: 720px) {
+      .users-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .tier-badge {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 7px;
+      border-radius: 4px;
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 14px 16px;
-      margin-bottom: 16px;
+      background: var(--elevated);
+      color: var(--muted);
     }
 
+    .tier-badge.high {
+      color: #6ee7b7;
+      border-color: rgba(16, 185, 129, 0.28);
+      background: rgba(16, 185, 129, 0.07);
+    }
+
+    /* Post Entry Rows */
     .posts-builder {
       display: flex;
       flex-direction: column;
       gap: 12px;
-      margin-bottom: 14px;
     }
 
     .post-entry {
-      background: #12151c;
+      background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: 8px;
       padding: 14px;
     }
 
@@ -165,544 +411,613 @@
       flex-wrap: wrap;
     }
 
-    .post-entry-title {
-      font-size: 0.88rem;
-      font-weight: 700;
-      color: #f8fafc;
-    }
-
     .post-entry-grid {
       display: grid;
-      grid-template-columns: 1.5fr 1.1fr 0.45fr 0.45fr 0.9fr;
+      grid-template-columns: 1.6fr 1.15fr 0.45fr 0.45fr 0.9fr;
       gap: 10px;
-      align-items: start;
+      align-items: end;
     }
 
-    @media (max-width: 820px) {
+    @media (max-width: 860px) {
       .post-entry-grid {
         grid-template-columns: 1fr;
       }
     }
 
+    .meta-footer {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 12px;
+    }
+
     .preview-line {
-      margin-top: 8px;
-      font-size: 0.8rem;
-      color: #38bdf8;
-    }
-
-    .rules-detected-line {
-      margin-top: 6px;
-      font-size: 0.8rem;
-      color: #fbbf24;
-      display: none;
-    }
-
-    .settings-section-title {
-      font-size: 0.8rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
       color: var(--muted);
-      margin-bottom: 8px;
-      margin-top: 14px;
+      font-family: var(--mono);
+      font-size: 11.5px;
     }
 
-    .settings-grid {
+    .eta-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--elevated);
+      border: 1px solid var(--border);
+      padding: 3px 9px;
+      border-radius: 6px;
+    }
+
+    /* Rules Digest Card */
+    .rules-detected-line {
+      display: none;
+      margin-top: 12px;
+      padding: 12px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .rules-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    @media (max-width: 680px) {
+      .rules-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .rule-cell {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .rule-cell strong {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--subtle);
+      margin-bottom: 3px;
+    }
+
+    .rule-cell.highlight {
+      border-color: rgba(245, 158, 11, 0.35);
+    }
+
+    .rule-cell.highlight strong {
+      color: var(--amber);
+    }
+
+    /* Timing & Settings Bar */
+    .timing-grid {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
       gap: 10px;
-      background: #12151c;
-      border: 1px solid var(--border);
-      padding: 13px;
-      border-radius: 10px;
-      margin-bottom: 14px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
     }
 
-    @media (max-width: 760px) {
-      .settings-grid {
+    @media (max-width: 780px) {
+      .timing-grid {
         grid-template-columns: repeat(2, 1fr);
       }
     }
 
-    .settings-grid label {
-      font-size: 0.74rem;
-      color: var(--muted);
-      margin-bottom: 5px;
-    }
-
-    .actions {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    button {
-      cursor: pointer;
-      border: none;
-      border-radius: 10px;
-      padding: 10px 15px;
-      font-size: 0.88rem;
-      font-weight: 600;
-      transition: all 0.2s;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 7px;
-    }
-
-    .btn-primary {
-      flex: 1;
-      background: linear-gradient(90deg, #e1306c, #c13584);
-      color: #fff;
-    }
-
-    .btn-primary:hover:not(:disabled) {
-      filter: brightness(1.1);
-      transform: translateY(-1px);
-    }
-
-    .btn-secondary {
-      background: #232734;
-      color: var(--text);
+    /* Collapsible Advanced Drawers */
+    details.drawer {
+      background: var(--surface);
       border: 1px solid var(--border);
-      padding: 8px 12px;
-      font-size: 0.8rem;
-    }
-
-    .btn-secondary:hover {
-      background: #2d3242;
-    }
-
-    .btn-success {
-      background: rgba(16, 185, 129, 0.18);
-      color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.4);
-      padding: 8px 12px;
-      font-size: 0.8rem;
-    }
-
-    .btn-danger {
-      background: rgba(239, 68, 68, 0.14);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      padding: 8px 12px;
-      font-size: 0.8rem;
-    }
-
-    .status-box {
-      margin-top: 14px;
-      padding: 12px 15px;
       border-radius: 10px;
-      font-size: 0.86rem;
-      display: none;
-      line-height: 1.4;
     }
 
-    .status-box.info {
-      display: block;
-      background: rgba(245, 158, 11, 0.12);
-      border: 1px solid rgba(245, 158, 11, 0.35);
-      color: #fbbf24;
-    }
-
-    .status-box.success {
-      display: block;
-      background: rgba(16, 185, 129, 0.12);
-      border: 1px solid rgba(16, 185, 129, 0.35);
-      color: #34d399;
-    }
-
-    .status-box.error {
-      display: block;
-      background: rgba(239, 68, 68, 0.12);
-      border: 1px solid rgba(239, 68, 68, 0.35);
-      color: #f87171;
-    }
-
-    .tasks-section {
-      margin-top: 22px;
-      border-top: 1px solid var(--border);
-      padding-top: 16px;
-    }
-
-    .tasks-header {
+    details.drawer summary {
+      list-style: none;
+      padding: 13px 18px;
+      cursor: pointer;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      user-select: none;
     }
 
-    .tasks-header h3 {
-      font-size: 0.88rem;
-      color: #e2e8f0;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+    details.drawer summary::-webkit-details-marker {
+      display: none;
     }
 
+    details.drawer summary:hover {
+      color: var(--text);
+    }
+
+    details.drawer[open] summary {
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .drawer-body {
+      padding: 16px 18px;
+    }
+
+    .checks-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    @media (max-width: 680px) {
+      .checks-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .check-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .check-item input {
+      accent-color: var(--text);
+    }
+
+    /* Action Bar */
+    .launch-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+
+    .status-toast {
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 7px;
+      font-size: 12.5px;
+      display: none;
+      border: 1px solid var(--border);
+      background: var(--elevated);
+      color: var(--text);
+    }
+
+    .status-toast.success {
+      display: block;
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #a7f3d0;
+    }
+
+    .status-toast.error {
+      display: block;
+      border-color: rgba(244, 63, 94, 0.35);
+      color: #fda4af;
+    }
+
+    .status-toast.info {
+      display: block;
+      border-color: rgba(245, 158, 11, 0.35);
+      color: #fde68a;
+    }
+
+    /* Active Jobs */
     .task-list {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
 
     .task-card {
-      background: #12151c;
+      background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: 8px;
       padding: 14px 16px;
     }
 
     .task-card.running {
-      border-color: rgba(225, 48, 108, 0.5);
+      border-color: var(--border-strong);
     }
 
     .task-top {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 10px;
-      margin-bottom: 8px;
+      gap: 12px;
+      margin-bottom: 10px;
       flex-wrap: wrap;
     }
 
-    .task-title {
-      font-size: 0.9rem;
-      font-weight: 700;
-      color: #f8fafc;
+    .task-id {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text);
     }
 
     .task-url {
-      color: #60a5fa;
-      font-size: 0.8rem;
-      text-decoration: none;
-      margin-left: 6px;
-    }
-
-    .task-meta {
-      font-size: 0.8rem;
       color: var(--muted);
-      margin-bottom: 8px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      text-decoration: none;
+      margin-left: 8px;
     }
 
-    .progress-bar-bg {
+    .task-url:hover {
+      color: var(--text);
+      text-decoration: underline;
+    }
+
+    .task-stats-bar {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 8px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 10px;
+    }
+
+    .task-stats-bar strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .progress-track {
       width: 100%;
-      height: 8px;
-      background: #232734;
+      height: 5px;
+      background: var(--elevated);
       border-radius: 999px;
       overflow: hidden;
       margin-bottom: 8px;
     }
 
-    .progress-bar-fill {
+    .progress-fill {
       height: 100%;
       width: 0%;
-      background: linear-gradient(90deg, #f09433, #e1306c, #c13584);
-      transition: width 0.3s ease;
+      background: var(--text);
+      transition: width 0.35s ease;
     }
 
-    .task-bottom {
+    .task-foot {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 0.8rem;
-      color: var(--muted);
+      font-size: 12px;
+      color: var(--subtle);
       gap: 10px;
       flex-wrap: wrap;
     }
 
-    .history {
-      margin-top: 20px;
-      border-top: 1px solid var(--border);
-      padding-top: 14px;
-    }
-
-    .history h3 {
-      font-size: 0.84rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 10px;
-    }
-
-    .history-list {
-      list-style: none;
-      max-height: 170px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .history-item {
-      font-size: 0.8rem;
-      padding: 7px 11px;
-      background: #12151c;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-    }
-
+    /* Accounts & History */
     .account-pill {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      background: #181b23;
+      background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 7px 11px;
-      font-size: 0.8rem;
+      border-radius: 7px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .history-list {
+      list-style: none;
+      max-height: 180px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .history-item {
+      font-size: 12px;
+      padding: 7px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+    }
+
+    .history-item strong {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .tag-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      border-radius: 5px;
+      font-size: 11.5px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .tag-chip strong {
+      color: var(--text);
+    }
+
+    .penalized-bar {
+      display: none;
+      margin-top: 12px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      background: rgba(245, 158, 11, 0.06);
+      font-size: 12px;
+      color: #fde68a;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <div class="title-group">
-        <h1>Instagram Multi-Post & Multi-Account Pro Bot</h1>
-        <p>Auto-detector de reglas y fecha de cierre • Modo Francotirador • Multicuentas • Control por Telegram • Segundo Plano</p>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-mark">IG</div>
+        <span class="brand-title">Automation Console</span>
       </div>
-      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-        <button type="button" class="btn-primary" id="openDashboardBtn" style="padding: 8px 14px; font-size: 0.83rem;">
-          📊 Abrir Dashboard & Galería de Posts
-        </button>
-        <div class="badge" id="sessionBadge">● Verificando sesión...</div>
+
+      <nav class="nav-tabs">
+        <span class="nav-tab active">Control</span>
+        <button type="button" class="nav-tab" id="openDashboardBtn">Dashboard y Galería</button>
+      </nav>
+
+      <div class="topbar-right">
+        <div class="status-pill" id="sessionBadge">
+          <span class="status-dot"></span>
+          <span id="sessionBadgeText">Verificando sesión</span>
+        </div>
+        <button type="button" class="btn-subtle" id="goIgTopBtn">Ver IG</button>
+        <button type="button" class="btn-subtle" id="minimizeBtn">Minimizar</button>
+        <button type="button" class="btn-danger" id="closeBtn" style="padding: 5px 10px; font-size: 12px;">Salir</button>
       </div>
     </div>
+  </header>
 
-    <!-- Estadísticas Globales y Ranking de Usuarios Más Etiquetados -->
-    <div class="panel-box">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
-        <span style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8;">
-          📊 Analíticas Globales y Probabilidad en Vivo
-        </span>
-        <button type="button" class="btn-secondary" id="resetStatsBtn" style="padding: 4px 10px; font-size: 0.74rem;">
-          🔄 Reiniciar Contador
-        </button>
+  <main class="shell">
+    <!-- Metrics Strip -->
+    <section class="metrics-strip">
+      <div class="metric-cell">
+        <div class="metric-label">Comentarios (Sesión / Total)</div>
+        <div class="metric-value tabular">
+          <span id="statSessionCount">0</span>
+          <span style="color: var(--subtle); font-weight: 400; font-size: 15px;"> / <span id="statTotalCount">0</span></span>
+        </div>
+        <div class="metric-sub">
+          <button type="button" id="resetStatsBtn" style="background: none; border: none; color: var(--subtle); padding: 0; font-size: 11.5px; text-decoration: underline;">Reiniciar contador</button>
+        </div>
       </div>
-      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px;">
-        <div style="background: #181b23; border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
-          <div style="font-size: 0.73rem; color: var(--muted);">Tus Msjs (Sesión / Histórico)</div>
-          <div style="font-size: 1.2rem; font-weight: 700; color: #34d399; margin-top: 3px;">
-            <span id="statSessionCount">0</span> <span style="color: var(--muted); font-size: 0.9rem;">/ <span id="statTotalCount">0</span></span>
+
+      <div class="metric-cell">
+        <div class="metric-label">Total del Post en IG</div>
+        <div class="metric-value tabular" id="statPostTotal">—</div>
+        <div class="metric-sub tabular" id="statPostSub">Sin post activo</div>
+      </div>
+
+      <div class="metric-cell">
+        <div class="metric-label">Probabilidad Real de Ganar</div>
+        <div class="metric-value tabular" id="statWinProb" style="color: var(--green);">—</div>
+        <div class="metric-sub tabular" id="statWinSub">Calculada en vivo</div>
+      </div>
+
+      <div class="metric-cell">
+        <div class="metric-label">Más Etiquetado</div>
+        <div class="metric-value mono" id="statTopUser" style="font-size: 15px; padding-top: 3px;">—</div>
+        <div class="metric-sub" id="tagRankingSummary">Distribución ponderada</div>
+      </div>
+    </section>
+
+    <!-- Ranking inline -->
+    <div id="tagRankingList" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: -8px;"></div>
+
+    <!-- Sección Principal: Configurar Sorteo(s) -->
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-title">Configurar Sorteos</div>
+          <div class="section-desc">Pega el enlace de un post o reel para analizar automáticamente sus reglas, fecha límite y tiempo estimado de ejecución.</div>
+        </div>
+        <button type="button" class="btn-ghost" id="addPostRowBtn">+ Añadir otro post</button>
+      </div>
+
+      <div class="posts-builder" id="postsBuilder"></div>
+
+      <div class="timing-grid">
+        <div>
+          <label class="field-label" for="accountSelect">Cuenta</label>
+          <select id="accountSelect">
+            <option value="principal">Cuenta Principal</option>
+            <option value="ALL">Todas las cuentas activas</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="typingDelay">Tipeo / letra (ms)</label>
+          <input type="text" id="typingDelay" class="tabular" value="65-135" />
+        </div>
+        <div>
+          <label class="field-label" for="intervalSec">Intervalo (seg)</label>
+          <input type="text" id="intervalSec" class="tabular" value="38-75" />
+        </div>
+        <div>
+          <label class="field-label" for="batchSize">Pausa cada X msjs</label>
+          <input type="number" id="batchSize" class="tabular" value="10" min="0" max="100" />
+        </div>
+        <div>
+          <label class="field-label" for="batchPauseMin">Duración pausa (min)</label>
+          <input type="text" id="batchPauseMin" class="tabular" value="4-7" />
+        </div>
+      </div>
+
+      <div class="launch-bar">
+        <label class="check-item" style="color: var(--text);">
+          <input type="checkbox" id="autoMinimize" checked />
+          Minimizar ventana automáticamente al iniciar (segundo plano)
+        </label>
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <span class="eta-pill tabular" id="globalEtaBadge">Duración aprox: —</span>
+          <button type="button" class="btn-primary" id="submitBtn">Iniciar envío</button>
+        </div>
+      </div>
+
+      <div id="statusBox" class="status-toast"></div>
+    </section>
+
+    <!-- Sección de Usuarios en 2 Grupos -->
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-title">Grupos de Etiquetado Ponderado</div>
+          <div class="section-desc" id="userCountBadge">Muestreo ponderado sin repetición con enfriamiento para ocasionales.</div>
+        </div>
+        <button type="button" class="btn-ghost" id="saveUsersBtn">Guardar listas</button>
+      </div>
+
+      <div class="users-grid">
+        <div>
+          <label class="field-label" for="frequentUsersList">
+            <span>Grupo 1 · Confianza / Frecuentes</span>
+            <span class="tier-badge high">Peso 5x · Sin cooldown</span>
+          </label>
+          <textarea id="frequentUsersList" placeholder="@cuenta_secundaria&#10;@amigo_confianza"></textarea>
+        </div>
+
+        <div>
+          <label class="field-label" for="occasionalUsersList">
+            <span>Grupo 2 · Ocasionales / No spamear</span>
+            <span class="tier-badge">Peso 1x · Cooldown 4 turnos</span>
+          </label>
+          <textarea id="occasionalUsersList" placeholder="@amigo_ocasional"></textarea>
+        </div>
+      </div>
+
+      <div id="penalizedBanner" class="penalized-bar">
+        <span id="penalizedText"></span>
+        <button type="button" class="btn-subtle" id="clearPenaltyBtn">Restaurar peso normal</button>
+      </div>
+    </section>
+
+    <!-- Cola de Posts Activos -->
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-title">Ejecución en Vivo</div>
+          <div class="section-desc">Posts activos o programados en modo francotirador con tiempo restante aproximado.</div>
+        </div>
+        <button type="button" class="btn-danger" id="stopAllBtn" style="display: none;">Detener todos</button>
+      </div>
+
+      <div class="task-list" id="taskList">
+        <div style="color: var(--subtle); font-size: 12.5px;" id="emptyTasks">No hay posts ejecutándose en este momento.</div>
+      </div>
+    </section>
+
+    <!-- Ajustes Secundarios Plegables (Limpio, sin saturar la pantalla) -->
+    <details class="drawer">
+      <summary>
+        <span>Multicuentas, Control Remoto por Telegram y Opciones de Comportamiento</span>
+        <span style="font-size: 11.5px; color: var(--subtle);">Expandir</span>
+      </summary>
+      <div class="drawer-body" style="display: flex; flex-direction: column; gap: 18px;">
+        <!-- Opciones de Comportamiento -->
+        <div>
+          <div style="font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 10px;">Reglas y Simulación Humana</div>
+          <div class="checks-grid">
+            <label class="check-item">
+              <input type="checkbox" id="autoDetectRules" checked />
+              Auto-detectar reglas, nº de amigos y fecha límite
+            </label>
+            <label class="check-item">
+              <input type="checkbox" id="autoLikeFollow" checked />
+              Dar Like automático y seguir al organizador
+            </label>
+            <label class="check-item">
+              <input type="checkbox" id="simulateTypos" checked />
+              Simulación avanzada (typos corregidos con Backspace + micro-scroll)
+            </label>
+            <label class="check-item">
+              <input type="checkbox" id="antiDuplicate" checked />
+              Anti-deduplicación (alterna orden del texto + hashes únicos)
+            </label>
+            <label class="check-item">
+              <input type="checkbox" id="allowEmojis" checked />
+              Permitir 1 emoji de desempate (separado por espacio)
+            </label>
           </div>
         </div>
-        <div style="background: #181b23; border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
-          <div style="font-size: 0.73rem; color: var(--muted);">💬 Total Comentarios del Post</div>
-          <div id="statPostTotal" style="font-size: 1.2rem; font-weight: 700; color: #38bdf8; margin-top: 3px;">—</div>
-        </div>
-        <div style="background: #181b23; border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
-          <div style="font-size: 0.73rem; color: var(--muted);">🎯 Probabilidad de Ganar</div>
-          <div id="statWinProb" style="font-size: 1.05rem; font-weight: 700; color: #10b981; margin-top: 4px;">—</div>
-        </div>
-        <div style="background: #181b23; border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
-          <div style="font-size: 0.73rem; color: var(--muted);">🏆 Más Etiquetado</div>
-          <div id="statTopUser" style="font-size: 0.92rem; font-weight: 700; color: #fbbf24; margin-top: 5px;">—</div>
-        </div>
-      </div>
-      <div id="tagRankingList" style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.78rem; color: var(--muted);">
-        Sin etiquetas registradas todavía.
-      </div>
-    </div>
 
-    <!-- Gestor Visual de Multicuentas + Control por Telegram -->
-    <div style="display: grid; grid-template-columns: 1.15fr 1fr; gap: 14px; margin-bottom: 16px;">
-      <!-- Multicuentas -->
-      <div class="panel-box" style="margin-bottom: 0;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
-          <span style="font-size: 0.84rem; font-weight: 700; color: #a78bfa;">
-            👤 Gestor de Multicuentas de Instagram
-          </span>
-          <button type="button" class="btn-secondary" id="goIgTopBtn" style="padding: 4px 9px; font-size: 0.74rem;">
-            👁️ Ver IG Principal
-          </button>
-        </div>
-        <div id="accountsListContainer" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;"></div>
-        <div style="display: flex; gap: 8px;">
-          <input type="text" id="newAccountLabel" placeholder="Nombre de otra cuenta (ej: Secundaria, Mamá)..." />
-          <button type="button" class="btn-success" id="addAccountBtn" style="white-space: nowrap;">
-            ➕ Agregar Cuenta
-          </button>
+        <!-- Multicuentas + Telegram -->
+        <div class="users-grid" style="padding-top: 14px; border-top: 1px solid var(--border);">
+          <div>
+            <div style="font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 8px;">Multicuentas de Instagram</div>
+            <div id="accountsListContainer" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;"></div>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="newAccountLabel" placeholder="Alias (ej: Secundaria)" />
+              <button type="button" class="btn-ghost" id="addAccountBtn" style="white-space: nowrap;">+ Agregar</button>
+            </div>
+          </div>
+
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 12px; font-weight: 600; color: var(--text);">Telegram (Notificaciones y Remoto)</span>
+              <label class="check-item" style="font-size: 12px;">
+                <input type="checkbox" id="tgEnabled" /> Activo
+              </label>
+            </div>
+            <div style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 8px; margin-bottom: 8px;">
+              <input type="password" id="tgBotToken" placeholder="Bot Token (@BotFather)" />
+              <input type="text" id="tgChatId" placeholder="Chat ID" />
+            </div>
+            <button type="button" class="btn-ghost" id="saveTelegramBtn">Guardar y probar conexión</button>
+          </div>
         </div>
       </div>
+    </details>
 
-      <!-- Notificaciones y Control Remoto por Telegram -->
-      <div class="panel-box" style="margin-bottom: 0;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <span style="font-size: 0.84rem; font-weight: 700; color: #38bdf8;">
-            📱 Control desde el Teléfono (Telegram)
-          </span>
-          <label style="margin: 0; font-size: 0.76rem; color: #34d399; cursor: pointer;">
-            <input type="checkbox" id="tgEnabled" style="margin-right: 5px;" /> Activo
-          </label>
-        </div>
-        <div style="display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 8px; margin-bottom: 8px;">
-          <input type="password" id="tgBotToken" placeholder="Bot Token (de @BotFather)" />
-          <input type="text" id="tgChatId" placeholder="Tu Chat ID" />
-        </div>
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-          <span class="hint">Envía un link de IG al bot desde tu celular para iniciarlo remoto</span>
-          <button type="button" class="btn-secondary" id="saveTelegramBtn" style="white-space: nowrap; padding: 6px 11px;">
-            💾 Guardar y Probar
-          </button>
-        </div>
+    <!-- Registro Reciente -->
+    <section class="section">
+      <div class="section-head" style="margin-bottom: 10px;">
+        <div class="section-title">Registro de Actividad</div>
       </div>
-    </div>
-
-    <!-- Dos Secciones de Usuarios Guardados: Frecuentes (5x) vs Ocasionales (1x + Cooldown) -->
-    <div class="panel-box">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
-        <span style="font-size: 0.85rem; font-weight: 700; color: #f8fafc;">
-          👥 Selección Ponderada de Usuarios (<span id="userCountBadge">7 usuarios totales</span>)
-        </span>
-        <button type="button" class="btn-success" id="saveUsersBtn">
-          💾 Guardar Ambas Listas de Usuarios
-        </button>
-      </div>
-
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
-        <div>
-          <label for="frequentUsersList" style="color: #34d399;">
-            <span>🔥 1. Frecuentes / Confianza (Peso 5x)</span>
-            <span class="hint">Salen a cada rato sin límite</span>
-          </label>
-          <textarea
-            id="frequentUsersList"
-            placeholder="Cuentas tuyas, mamá o amigos de confianza..."
-          ></textarea>
-        </div>
-
-        <div>
-          <label for="occasionalUsersList" style="color: #fbbf24;">
-            <span>🌙 2. Ocasionales / No Spamear (Peso 1x + Cooldown)</span>
-            <span class="hint">Salen poco y descansan varios turnos</span>
-          </label>
-          <textarea
-            id="occasionalUsersList"
-            placeholder="Amigos que no quieres saturar de menciones..."
-          ></textarea>
-        </div>
-      </div>
-
-      <div id="penalizedBanner" style="display: none; margin-top: 10px; padding: 8px 12px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; font-size: 0.78rem; color: #fde68a; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
-        <span id="penalizedText">⚠️ Usuarios con peso mínimo (0.15x) por alerta de bloqueo/restricción:</span>
-        <button type="button" class="btn-secondary" id="clearPenaltyBtn" style="padding: 4px 9px; font-size: 0.73rem;">
-          ♻️ Restaurar Peso Normal
-        </button>
-      </div>
-    </div>
-
-    <!-- Constructor de 1 o varios Posts para lanzar de una vez -->
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
-      <span class="settings-section-title" style="margin: 0;">📌 Configura el Sorteo (Detección de Reglas + Modo Francotirador Horario)</span>
-      <button type="button" class="btn-secondary" id="addPostRowBtn">
-        ➕ Añadir otro Post al formulario
-      </button>
-    </div>
-
-    <div class="posts-builder" id="postsBuilder"></div>
-
-    <!-- Tiempos Anti-Spam y Cuenta a Utilizar -->
-    <div class="settings-section-title">🛡️ Cuenta a Usar y Tiempos Anti-Spam</div>
-    <div class="settings-grid">
-      <div>
-        <label for="accountSelect">👤 ¿Con qué cuenta comentar?</label>
-        <select id="accountSelect">
-          <option value="principal">Cuenta Principal</option>
-          <option value="ALL">🔥 TODAS mis cuentas activas a la vez</option>
-        </select>
-      </div>
-      <div>
-        <label for="typingDelay">⌨️ Delay Tipeo/Letra (ms)</label>
-        <input type="text" id="typingDelay" value="65-135" />
-      </div>
-      <div>
-        <label for="intervalSec">⏱️ Espera entre Msjs (seg)</label>
-        <input type="text" id="intervalSec" value="38-75" />
-      </div>
-      <div>
-        <label for="batchSize">🛡️ Pausa cada X Msjs</label>
-        <input type="number" id="batchSize" value="10" min="0" max="100" />
-      </div>
-      <div>
-        <label for="batchPauseMin">☕ Duración Pausa (min)</label>
-        <input type="text" id="batchPauseMin" value="4-7" />
-      </div>
-    </div>
-
-    <!-- Casillas de Inteligencia de Sorteo y Simulación Humana -->
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px;">
-      <label style="justify-content: flex-start; gap: 8px; font-size: 0.82rem; color: #38bdf8; cursor: pointer;">
-        <input type="checkbox" id="autoDetectRules" checked />
-        🔍 Auto-detectar reglas del sorteo (nº de amigos, palabra clave y si ya cerró o venció la fecha)
-      </label>
-
-      <label style="justify-content: flex-start; gap: 8px; font-size: 0.82rem; color: #f472b6; cursor: pointer;">
-        <input type="checkbox" id="autoLikeFollow" checked />
-        ❤️ Dar Like automático al post y seguir al organizador antes de comentar
-      </label>
-
-      <label style="justify-content: flex-start; gap: 8px; font-size: 0.82rem; color: #a78bfa; cursor: pointer;">
-        <input type="checkbox" id="simulateTypos" checked />
-        ⌨️ Simulación humana avanzada (errores de dedo ocasionales corregidos con Backspace + micro-scrolls)
-      </label>
-
-      <label style="justify-content: flex-start; gap: 8px; font-size: 0.82rem; color: #f59e0b; cursor: pointer;">
-        <input type="checkbox" id="antiDuplicate" checked />
-        🎯 Anti-Deduplicación (Alterna el texto al principio/medio/final + variación única)
-      </label>
-
-      <label style="justify-content: flex-start; gap: 8px; font-size: 0.82rem; color: #cbd5e1; cursor: pointer;">
-        <input type="checkbox" id="allowEmojis" checked />
-        ✨ Permitir 1 emoji separado por espacio al agotarse las combinaciones
-      </label>
-
-      <label style="justify-content: flex-start; gap: 8px; font-size: 0.82rem; color: #34d399; cursor: pointer;">
-        <input type="checkbox" id="autoMinimize" checked />
-        🗕 Minimizar navegador automáticamente al iniciar (trabajar en segundo plano)
-      </label>
-    </div>
-
-    <div class="actions">
-      <button type="button" class="btn-primary" id="submitBtn">
-        🚀 Iniciar / Programar Post(s) Ahora
-      </button>
-      <button type="button" class="btn-secondary" id="minimizeBtn">
-        🗕 Minimizar Ventana
-      </button>
-      <button type="button" class="btn-danger" id="closeBtn">
-        🛑 Cerrar Todo
-      </button>
-    </div>
-
-    <div id="statusBox" class="status-box"></div>
-
-    <!-- Lista de Posts Activos en Paralelo -->
-    <div class="tasks-section">
-      <div class="tasks-header">
-        <h3>📋 Posts Ejecutándose o Programados en Modo Francotirador</h3>
-        <button type="button" class="btn-danger" id="stopAllBtn" style="display: none;">
-          ⏹️ Detener Todos los Posts
-        </button>
-      </div>
-      <div class="task-list" id="taskList">
-        <div style="color: var(--muted); font-size: 0.84rem;" id="emptyTasks">
-          No hay posts activos todavía.
-        </div>
-      </div>
-    </div>
-
-    <!-- Registro global en vivo -->
-    <div class="history">
-      <h3>Últimos comentarios publicados</h3>
       <ul class="history-list" id="historyList">
-        <li class="history-item" id="emptyHistory" style="color: var(--muted);">
-          Aún no se han enviado comentarios en esta sesión.
-        </li>
+        <li class="history-item" id="emptyHistory">Sin comentarios publicados en esta sesión.</li>
       </ul>
-    </div>
-  </div>
+    </section>
+  </main>
 
   <script>
     const frequentUsersInput = document.getElementById('frequentUsersList');
@@ -714,6 +1029,7 @@
     const saveUsersBtn = document.getElementById('saveUsersBtn');
     const postsBuilder = document.getElementById('postsBuilder');
     const addPostRowBtn = document.getElementById('addPostRowBtn');
+    const globalEtaBadge = document.getElementById('globalEtaBadge');
 
     const accountsListContainer = document.getElementById('accountsListContainer');
     const newAccountLabelInput = document.getElementById('newAccountLabel');
@@ -736,12 +1052,36 @@
     const closeBtn = document.getElementById('closeBtn');
     const statusBox = document.getElementById('statusBox');
     const sessionBadge = document.getElementById('sessionBadge');
+    const sessionBadgeText = document.getElementById('sessionBadgeText');
     const taskList = document.getElementById('taskList');
     const historyList = document.getElementById('historyList');
     const emptyHistory = document.getElementById('emptyHistory');
 
     let statusPollTimer = null;
     let renderedLogCount = 0;
+
+    function formatDuration(totalSeconds) {
+      const s = Math.max(0, Math.round(totalSeconds || 0));
+      if (s < 60) return `${s}s`;
+      const hrs = Math.floor(s / 3600);
+      const mins = Math.floor((s % 3600) / 60);
+      if (hrs > 0) return `${hrs}h ${mins}m`;
+      return `${mins}m`;
+    }
+
+    function estimateTotalSecondsForCount(totalComments) {
+      const count = Math.max(1, parseInt(totalComments, 10) || 1);
+      const [minInt, maxInt] = parseRange(intervalSecInput.value, 38, 75);
+      const avgInt = (minInt + maxInt) / 2;
+      const batchSize = Math.max(0, parseInt(batchSizeInput.value, 10) || 0);
+      const [minPause, maxPause] = parseRange(batchPauseMinInput.value, 4, 7);
+      const avgBatchSec = ((minPause + maxPause) / 2) * 60;
+
+      const batchPauses = batchSize > 0 && count > 1 ? Math.floor((count - 1) / batchSize) : 0;
+      const normalWaits = Math.max(0, count - 1 - batchPauses);
+      const typingAndPostSec = count * 10;
+      return Math.round(typingAndPostSec + normalWaits * avgInt + batchPauses * avgBatchSec);
+    }
 
     function parseUsers(rawText) {
       if (!rawText) return [];
@@ -776,9 +1116,9 @@
       const currentVal = accountSelect.value || 'principal';
       accountSelect.innerHTML =
         accounts
-          .map((a) => `<option value="${a.id}">${a.hasSession ? '🟢' : '🟡'} ${a.label}</option>`)
+          .map((a) => `<option value="${a.id}">${a.label}${a.hasSession ? '' : ' (sin sesión)'}</option>`)
           .join('') +
-        `<option value="ALL">🔥 TODAS mis cuentas activas a la vez (${accounts.filter((a) => a.hasSession).length})</option>`;
+        `<option value="ALL">Todas las cuentas activas (${accounts.filter((a) => a.hasSession).length})</option>`;
 
       if ([...accountSelect.options].some((o) => o.value === currentVal)) {
         accountSelect.value = currentVal;
@@ -788,13 +1128,12 @@
         .map(
           (acc) => `
           <div class="account-pill">
-            <span>${acc.hasSession ? '🟢' : '🟡'} <strong>${acc.label}</strong></span>
-            <button type="button" class="btn-success" style="padding: 3px 8px; font-size: 0.72rem;" onclick="saveAccSession('${acc.id}')">
-              💾 Guardar Sesión
-            </button>
+            <span class="status-dot" style="background: ${acc.hasSession ? 'var(--green)' : 'var(--amber)'};"></span>
+            <strong>${acc.label}</strong>
+            <button type="button" class="btn-subtle" style="padding: 2px 7px; font-size: 11px;" onclick="saveAccSession('${acc.id}')">Guardar</button>
             ${
               acc.id !== 'principal'
-                ? `<button type="button" class="btn-danger" style="padding: 3px 7px; font-size: 0.72rem;" onclick="deleteAcc('${acc.id}')">✖</button>`
+                ? `<button type="button" class="btn-danger" style="padding: 2px 6px; font-size: 11px;" onclick="deleteAcc('${acc.id}')">×</button>`
                 : ''
             }
           </div>
@@ -813,7 +1152,7 @@
       if (data.ok) {
         renderAccountsManager(data.accounts);
         updateBadge(true);
-        showStatus('success', '💾 ¡Sesión de la cuenta guardada exitosamente!');
+        showStatus('success', 'Sesión de la cuenta guardada.');
       }
     };
 
@@ -824,15 +1163,13 @@
         body: JSON.stringify({ accountId }),
       });
       const data = await res.json();
-      if (data.ok) {
-        renderAccountsManager(data.accounts);
-      }
+      if (data.ok) renderAccountsManager(data.accounts);
     };
 
     addAccountBtn.addEventListener('click', async () => {
       const label = newAccountLabelInput.value.trim();
       if (!label) {
-        showStatus('error', '⚠️ Escribe un nombre para identificar tu cuenta (ej: Secundaria).');
+        showStatus('error', 'Escribe un alias para la nueva cuenta.');
         newAccountLabelInput.focus();
         return;
       }
@@ -847,13 +1184,10 @@
         if (data.ok) {
           newAccountLabelInput.value = '';
           renderAccountsManager(data.accounts);
-          showStatus(
-            'info',
-            `🔑 Se abrió una pestaña de Instagram para "${data.label}". Inicia sesión ahí y luego pulsa "💾 Guardar Sesión".`
-          );
+          showStatus('info', `Se abrió una pestaña de Instagram para "${data.label}". Inicia sesión y pulsa Guardar.`);
         }
       } catch (err) {
-        showStatus('error', '⚠️ Error al agregar cuenta: ' + err.message);
+        showStatus('error', err.message);
       } finally {
         addAccountBtn.disabled = false;
       }
@@ -874,12 +1208,12 @@
         });
         const data = await res.json();
         if (res.ok && data.ok) {
-          showStatus('success', '📲 ¡Configuración de Telegram guardada y mensaje de prueba enviado a tu teléfono!');
+          showStatus('success', 'Telegram guardado y mensaje de prueba enviado.');
         } else {
-          showStatus('error', '⚠️ Telegram: ' + (data.error || 'Verifica tu Bot Token y Chat ID.'));
+          showStatus('error', 'Telegram: ' + (data.error || 'Verifica Token y Chat ID.'));
         }
       } catch (err) {
-        showStatus('error', '⚠️ Error: ' + err.message);
+        showStatus('error', err.message);
       } finally {
         saveTelegramBtn.disabled = false;
       }
@@ -890,42 +1224,43 @@
       div.className = 'post-entry';
       div.innerHTML = `
         <div class="post-entry-header">
-          <span class="post-entry-title">📌 Sorteo a Comentar <span class="auto-analyze-badge" style="font-size: 0.75rem; font-weight: 400; color: var(--muted);">— Pega el link y analizará las reglas automáticamente</span></span>
+          <span style="font-size: 12.5px; font-weight: 600; color: var(--text);">Sorteo</span>
           <div style="display: flex; gap: 6px;">
-            <button type="button" class="btn-secondary analyze-row-btn" style="padding: 4px 10px; font-size: 0.74rem;" title="Volver a analizar descripción">
-              🔄 Re-analizar
-            </button>
+            <button type="button" class="btn-subtle analyze-row-btn">Re-analizar</button>
             ${
               postsBuilder.children.length > 0
-                ? `<button type="button" class="btn-danger remove-row-btn" style="padding: 4px 10px; font-size: 0.75rem;">✖ Quitar</button>`
+                ? `<button type="button" class="btn-danger remove-row-btn" style="padding: 5px 9px; font-size: 11.5px;">Quitar</button>`
                 : ''
             }
           </div>
         </div>
         <div class="post-entry-grid">
           <div>
-            <label>🔗 Link del Post / Reel (Auto-analiza al pegar)</label>
-            <input type="text" class="row-url" placeholder="Pega aquí https://www.instagram.com/p/XXXX/" value="${initialUrl}" />
+            <label class="field-label">URL del Post o Reel</label>
+            <input type="text" class="row-url mono" placeholder="https://www.instagram.com/p/... o /reel/..." value="${initialUrl}" />
           </div>
           <div>
-            <label>💬 Respuesta / Mensaje (Opcional o separa con |)</label>
-            <input type="text" class="row-msg" placeholder="Si pide responder algo, escríbelo aquí" value="${initialMsg}" />
+            <label class="field-label">Respuesta / Mensaje <span class="field-hint">Opcional · separa con |</span></label>
+            <input type="text" class="row-msg" placeholder="Vacío = solo @etiquetados" value="${initialMsg}" />
           </div>
           <div>
-            <label>👤 Etiquetar</label>
-            <input type="number" class="row-tags" value="${initialTags}" min="0" max="20" />
+            <label class="field-label">Etiquetar</label>
+            <input type="number" class="row-tags tabular" value="${initialTags}" min="0" max="20" />
           </div>
           <div>
-            <label>🔁 Total Msjs</label>
-            <input type="number" class="row-total" value="${initialTotal}" min="1" max="500" />
+            <label class="field-label">Cantidad</label>
+            <input type="number" class="row-total tabular" value="${initialTotal}" min="1" max="500" />
           </div>
           <div>
-            <label title="Opcional: déjalo vacío para iniciar ya, o elige fecha/hora para Modo Francotirador">🎯 Francotirador (Opcional)</label>
+            <label class="field-label">Programar (Francotirador)</label>
             <input type="datetime-local" class="row-schedule" />
           </div>
         </div>
-        <div class="rules-detected-line" style="margin-top: 10px; padding: 11px 13px; background: #181b23; border: 1px solid var(--border); border-radius: 10px; line-height: 1.5;"></div>
-        <div class="preview-line"></div>
+        <div class="rules-detected-line"></div>
+        <div class="meta-footer">
+          <div class="preview-line"></div>
+          <div class="eta-pill tabular row-eta">Duración aprox: —</div>
+        </div>
       `;
 
       const removeBtn = div.querySelector('.remove-row-btn');
@@ -946,19 +1281,16 @@
         const postUrl = urlInput.value.trim();
         const isValidIg = /^https?:\/\/(www\.)?instagram\.com\/(p|reel|tv)\/[\w-]+\/?/i.test(postUrl);
         if (!isValidIg) {
-          if (force) {
-            showStatus('error', '⚠️ Pega un link válido de post o reel de Instagram.');
-          }
+          if (force) showStatus('error', 'Pega una URL válida de post o reel de Instagram.');
           return;
         }
         if (!force && postUrl === lastAnalyzedUrl) return;
         lastAnalyzedUrl = postUrl;
 
         analyzeBtn.disabled = true;
-        analyzeBtn.textContent = '⏳ Analizando...';
+        analyzeBtn.textContent = 'Analizando...';
         rulesLine.style.display = 'block';
-        rulesLine.style.color = '#fbbf24';
-        rulesLine.innerHTML = '🔍 <strong>Analizando el post en Instagram y filtrando el relleno...</strong>';
+        rulesLine.innerHTML = `<span style="font-size: 12px; color: var(--muted);">Leyendo descripción y extrayendo reglas del sorteo...</span>`;
 
         try {
           const res = await fetch('/api/analyze-post', {
@@ -979,65 +1311,63 @@
             }
             updateAllPreviews();
 
-            const escapeHtml = (s) => String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const statusHeader = a.isClosed
-              ? `<div style="color: #f87171; font-weight: 700; margin-bottom: 6px;">🛑 SORTEO CERRADO / VENCIDO: ${escapeHtml(a.closeReason)}</div>`
-              : `<div style="color: #34d399; font-weight: 700; margin-bottom: 6px;">✅ Resumen Limpio del Sorteo (Sin Relleno) ${a.author ? '— ' + escapeHtml(a.author) : ''} ${a.postTotalComments ? `(${a.postTotalComments.toLocaleString()} comentarios actuales)` : ''}</div>`;
+            const esc = (s) => String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const headerHtml = a.isClosed
+              ? `<div style="color: var(--red); font-weight: 600; font-size: 12.5px;">Sorteo cerrado / vencido: ${esc(a.closeReason)}</div>`
+              : `<div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
+                  <strong style="color: var(--text);">Resumen de Reglas ${a.author ? '· ' + esc(a.author) : ''}</strong>
+                  <span class="tabular" style="color: var(--muted);">${a.postTotalComments ? a.postTotalComments.toLocaleString() + ' comentarios en IG' : ''}</span>
+                </div>`;
 
-            const rawCaptionBlock = a.rawCaption
-              ? `<details style="margin-top: 8px; font-size: 0.76rem; color: var(--muted);">
-                  <summary style="cursor: pointer; color: #94a3b8;">📄 Ver descripción completa original</summary>
-                  <div style="margin-top: 6px; padding: 8px 10px; background: #0f1117; border: 1px solid var(--border); border-radius: 6px; white-space: pre-wrap; max-height: 160px; overflow-y: auto; color: #cbd5e1;">${escapeHtml(a.rawCaption)}</div>
+            const needsAnswer =
+              d.questionOrPrompt && !d.questionOrPrompt.toLowerCase().startsWith('no pide responder');
+
+            const rawBlock = a.rawCaption
+              ? `<details style="margin-top: 8px; font-size: 11.5px; color: var(--subtle);">
+                  <summary style="cursor: pointer;">Ver descripción original completa</summary>
+                  <div style="margin-top: 6px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; white-space: pre-wrap; max-height: 150px; overflow-y: auto; color: var(--muted);">${esc(a.rawCaption)}</div>
                 </details>`
               : '';
 
-            rulesLine.style.color = '#e2e8f0';
             rulesLine.innerHTML = `
-              ${statusHeader}
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8rem;">
-                <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); padding: 7px 10px; border-radius: 8px;">
-                  <strong style="color: #fbbf24;">❓ Qué responder / escribir:</strong><br />
-                  <span>${escapeHtml(d.questionOrPrompt || 'Solo etiquetar (no pide pregunta)')}</span>
+              ${headerHtml}
+              <div class="rules-grid">
+                <div class="rule-cell ${needsAnswer ? 'highlight' : ''}">
+                  <strong>Qué responder / escribir</strong>
+                  ${esc(d.questionOrPrompt || 'No requiere respuesta (solo etiquetar)')}
                 </div>
-                <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); padding: 7px 10px; border-radius: 8px;">
-                  <strong style="color: #38bdf8;">👥 Personas a etiquetar:</strong><br />
-                  <span>${escapeHtml(d.taggingRule || 'Por defecto 2 amigos')}</span>
+                <div class="rule-cell">
+                  <strong>Etiquetado requerido</strong>
+                  ${esc(d.taggingRule || 'Por defecto 2 personas')}
                 </div>
-                <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); padding: 7px 10px; border-radius: 8px;">
-                  <strong style="color: #34d399;">➕ Seguir y requisitos:</strong><br />
-                  <span>${escapeHtml(d.followAndActionsRule || 'Dar Like y seguir al creador')}</span>
+                <div class="rule-cell">
+                  <strong>Cuentas a seguir y pasos</strong>
+                  ${esc(d.followAndActionsRule || 'Seguir al autor y dar Like')}
                 </div>
-                <div style="background: rgba(167, 139, 250, 0.08); border: 1px solid rgba(167, 139, 250, 0.25); padding: 7px 10px; border-radius: 8px;">
-                  <strong style="color: #a78bfa;">📅 Cuándo termina / cierra:</strong><br />
-                  <span>${escapeHtml(d.deadlineRule || 'No especifica fecha en el texto')}</span>
+                <div class="rule-cell">
+                  <strong>Fecha límite / cierre</strong>
+                  ${esc(d.deadlineRule || 'Sin fecha especificada')}
                 </div>
               </div>
-              ${rawCaptionBlock}
+              ${rawBlock}
             `;
           } else {
-            rulesLine.textContent = '⚠️ No se pudo leer el post: ' + (data.error || '');
+            rulesLine.innerHTML = `<span style="color: var(--red); font-size: 12px;">No se pudo analizar: ${data.error || ''}</span>`;
           }
         } catch (err) {
-          rulesLine.textContent = '⚠️ Error al analizar: ' + err.message;
+          rulesLine.innerHTML = `<span style="color: var(--red); font-size: 12px;">Error: ${err.message}</span>`;
         } finally {
           analyzeBtn.disabled = false;
-          analyzeBtn.textContent = '🔄 Re-analizar';
+          analyzeBtn.textContent = 'Re-analizar';
         }
       };
 
-      // Disparar automáticamente al pegar el link o terminar de escribirlo
-      urlInput.addEventListener('paste', () => {
-        setTimeout(() => runAnalysisForRow(false), 150);
-      });
+      urlInput.addEventListener('paste', () => setTimeout(() => runAnalysisForRow(false), 150));
       urlInput.addEventListener('input', () => {
         if (analyzeTimer) clearTimeout(analyzeTimer);
         analyzeTimer = setTimeout(() => runAnalysisForRow(false), 600);
       });
       analyzeBtn.addEventListener('click', () => runAnalysisForRow(true));
-
-      if (initialUrl) {
-        setTimeout(() => runAnalysisForRow(false), 300);
-      }
 
       div.querySelectorAll('input').forEach((inp) => {
         inp.addEventListener('input', updateAllPreviews);
@@ -1045,6 +1375,8 @@
 
       postsBuilder.appendChild(div);
       updateAllPreviews();
+
+      if (initialUrl) setTimeout(() => runAnalysisForRow(false), 300);
     }
 
     function getBothUserGroups() {
@@ -1061,21 +1393,28 @@
 
     function updateAllPreviews() {
       const { frequentUsers, occasionalUsers, allUsers } = getBothUserGroups();
-      userCountBadge.textContent = `${frequentUsers.length} frecuentes + ${occasionalUsers.length} ocasionales (${allUsers.length} total)`;
+      userCountBadge.textContent = `${frequentUsers.length} frecuentes · ${occasionalUsers.length} ocasionales (${allUsers.length} en total)`;
+
+      let maxRowEtaSec = 0;
 
       document.querySelectorAll('.post-entry').forEach((row) => {
         const rawMsg = row.querySelector('.row-msg').value.trim();
         const phrases = rawMsg.split('|').map((s) => s.trim()).filter(Boolean);
         const msg = phrases.length > 0 ? phrases[Math.floor(Math.random() * phrases.length)] : '';
         const tagsCount = Math.max(0, parseInt(row.querySelector('.row-tags').value, 10) || 0);
+        const totalComments = Math.max(1, parseInt(row.querySelector('.row-total').value, 10) || 1);
         const previewEl = row.querySelector('.preview-line');
+        const etaEl = row.querySelector('.row-eta');
 
-        const weightedPool = [
-          ...frequentUsers,
-          ...frequentUsers,
-          ...frequentUsers,
-          ...occasionalUsers,
-        ];
+        const etaSec = estimateTotalSecondsForCount(totalComments);
+        if (etaSec > maxRowEtaSec) maxRowEtaSec = etaSec;
+        const finishClock = new Date(Date.now() + etaSec * 1000).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        etaEl.textContent = `Aprox. ${formatDuration(etaSec)} · Fin ~${finishClock}`;
+
+        const weightedPool = [...frequentUsers, ...frequentUsers, ...frequentUsers, ...occasionalUsers];
         const chosen = [];
         for (const candidate of pickRandomUnique(weightedPool, weightedPool.length)) {
           if (!chosen.includes(candidate) && chosen.length < Math.min(tagsCount, allUsers.length)) {
@@ -1085,42 +1424,44 @@
 
         let example = '';
         if (msg && chosen.length >= 2) {
-          const v1 = `${chosen.join(' ')} ${msg}`;
-          const v2 = `${msg} ${chosen.join(' ')}`;
-          const v3 = `${chosen[0]} ${msg} ${chosen.slice(1).join(' ')}`;
-          example = `"${v1}"  ó  "${v2}"  ó  "${v3}"`;
+          example = `"${chosen.join(' ')} ${msg}"  |  "${msg} ${chosen.join(' ')}"`;
         } else if (msg && chosen.length === 1) {
-          example = `"${chosen[0]} ${msg}"  ó  "${msg} ${chosen[0]}"`;
+          example = `"${chosen[0]} ${msg}"  |  "${msg} ${chosen[0]}"`;
         } else if (chosen.length > 0) {
           example = `"${chosen.join(' ')}"`;
         } else if (msg) {
           example = `"${msg}"`;
         }
 
-        if (!example) {
-          previewEl.textContent = '⚠️ Vacío: elige al menos 1 etiquetado o escribe un mensaje';
-        } else {
-          previewEl.textContent = `👁️ Variaciones de orden: ${example}`;
-        }
+        previewEl.textContent = example ? `Ejemplo: ${example}` : 'Define al menos 1 etiquetado o mensaje';
       });
+
+      if (maxRowEtaSec > 0) {
+        const finishClock = new Date(Date.now() + maxRowEtaSec * 1000).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        globalEtaBadge.textContent = `Tiempo aprox: ${formatDuration(maxRowEtaSec)} (fin ~${finishClock})`;
+      }
     }
 
-    frequentUsersInput.addEventListener('input', updateAllPreviews);
-    occasionalUsersInput.addEventListener('input', updateAllPreviews);
+    [frequentUsersInput, occasionalUsersInput, intervalSecInput, batchSizeInput, batchPauseMinInput].forEach((el) =>
+      el.addEventListener('input', updateAllPreviews)
+    );
     addPostRowBtn.addEventListener('click', () => createPostEntryRow());
 
     function showStatus(type, message) {
-      statusBox.className = 'status-box ' + type;
+      statusBox.className = 'status-toast ' + type;
       statusBox.textContent = message;
     }
 
     function updateBadge(hasSession) {
       if (hasSession) {
-        sessionBadge.className = 'badge';
-        sessionBadge.textContent = '● Sesión Activa';
+        sessionBadge.className = 'status-pill';
+        sessionBadgeText.textContent = 'Sesión activa';
       } else {
-        sessionBadge.className = 'badge pending';
-        sessionBadge.textContent = '● Completa el login en Instagram';
+        sessionBadge.className = 'status-pill pending';
+        sessionBadgeText.textContent = 'Pendiente login';
       }
     }
 
@@ -1129,8 +1470,8 @@
       const li = document.createElement('li');
       li.className = 'history-item';
       li.innerHTML = `
-        <span>✅ <strong>[Post #${item.jobId} • ${item.accountLabel || 'Principal'}] #${item.index} (${item.time})</strong> — "${item.comment.replace(/</g, '&lt;')}"</span>
-        <span style="color: var(--muted);">${item.postShort}</span>
+        <span><strong>#${item.jobId} (${item.accountLabel || 'Principal'})</strong> · ${item.index} · <span class="mono">"${item.comment.replace(/</g, '&lt;')}"</span></span>
+        <span class="mono tabular" style="color: var(--subtle);">${item.time}</span>
       `;
       historyList.prepend(li);
     }
@@ -1163,48 +1504,59 @@
       taskList.innerHTML = jobs
         .map((job) => {
           const pct = job.total > 0 ? Math.round((job.completed / job.total) * 100) : 0;
-          const msgDesc = job.baseComment ? `"${job.baseComment.replace(/</g, '&lt;')}"` : '(Solo etiquetados)';
           const postTotalTxt =
             job.postTotalComments !== null && job.postTotalComments !== undefined
               ? job.postTotalComments.toLocaleString()
-              : 'Detectando...';
+              : '—';
           const myPostCount = job.myTotalInPost || job.completed || 0;
           const rawPct = job.probabilities ? job.probabilities.rawPercent : 0;
           const realPct = job.probabilities ? job.probabilities.estimatedRealPercent : 0;
           const oneInX = job.probabilities && job.probabilities.oneInX ? ` (1 en ${job.probabilities.oneInX})` : '';
 
+          const etaTxt =
+            job.running && job.etaSeconds > 0
+              ? `Restante ~${formatDuration(job.etaSeconds)}${job.etaFinishClock ? ' · Fin ' + job.etaFinishClock : ''}`
+              : job.running
+              ? 'Calculando tiempo...'
+              : job.error
+              ? 'Detenido'
+              : 'Completado';
+
+          const dotColor = job.running ? 'var(--green)' : job.error ? 'var(--red)' : 'var(--muted)';
+
           return `
             <div class="task-card ${job.running ? 'running' : ''}">
               <div class="task-top">
-                <div>
-                  <span class="task-title">${job.running ? '🔄' : job.error ? '❌' : '✅'} Post #${job.id} (${job.accountLabel || 'Principal'})</span>
-                  <a href="${job.postUrl}" target="_blank" class="task-url">${job.postUrl}</a>
+                <div style="display: flex; align-items: center; flex-wrap: wrap;">
+                  <span class="status-dot" style="background: ${dotColor}; margin-right: 8px;"></span>
+                  <span class="task-id">Post #${job.id} · ${job.accountLabel || 'Principal'}</span>
+                  <a href="${job.postUrl}" target="_blank" class="task-url">${job.postUrl.replace(/^https?:\/\/(www\.)?instagram\.com/i, '')}</a>
                 </div>
                 <div style="display: flex; gap: 6px; align-items: center;">
-                  <strong style="font-size: 0.85rem;">${job.completed} / ${job.total} (${pct}%)</strong>
-                  <button type="button" class="btn-secondary" onclick="focusTaskTab(${job.id})">👁️ Ver Pestaña</button>
+                  <span class="eta-pill tabular">${etaTxt}</span>
+                  <button type="button" class="btn-subtle" onclick="focusTaskTab(${job.id})">Ver pestaña</button>
                   ${
                     job.running
-                      ? `<button type="button" class="btn-danger" onclick="stopSingleTask(${job.id})">⏹️ Detener</button>`
+                      ? `<button type="button" class="btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="stopSingleTask(${job.id})">Detener</button>`
                       : ''
                   }
                 </div>
               </div>
-              <div class="task-meta">
-                💬 Mensaje: <strong>${msgDesc}</strong> &nbsp;|&nbsp; 👤 Etiquetados: <strong>${job.tagsPerComment}</strong>
-                ${job.detectedRulesSummary ? `<br /><span style="color: #fbbf24;">🔍 ${job.detectedRulesSummary}</span>` : ''}
+
+              <div class="task-stats-bar tabular">
+                <span>Progreso: <strong>${job.completed} / ${job.total} (${pct}%)</strong></span>
+                <span>Total post IG: <strong>${postTotalTxt}</strong></span>
+                <span>Tus boletos: <strong>${myPostCount} (${rawPct}%)</strong></span>
+                <span>Probabilidad real: <strong style="color: var(--green);">${realPct}%${oneInX}</strong></span>
               </div>
-              <div class="task-meta" style="color: #38bdf8; background: #181b23; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);">
-                📊 <strong>Comentarios Totales del Post:</strong> ${postTotalTxt} &nbsp;|&nbsp;
-                🎟️ <strong>Tus Boletos:</strong> ${myPostCount} &nbsp;|&nbsp;
-                📈 <strong>Tu Porcentaje:</strong> ${rawPct}% &nbsp;|&nbsp;
-                🎯 <strong>Probabilidad Real:</strong> <span style="color: #34d399; font-weight: 700;">${realPct}%${oneInX}</span>
+
+              <div class="progress-track">
+                <div class="progress-fill" style="width: ${pct}%;"></div>
               </div>
-              <div class="progress-bar-bg">
-                <div class="progress-bar-fill" style="width: ${pct}%;"></div>
-              </div>
-              <div class="task-bottom">
+
+              <div class="task-foot">
                 <span>${job.phaseMessage || ''}</span>
+                <span class="mono" style="font-size: 11px;">${job.baseComment ? '"' + job.baseComment.replace(/</g, '&lt;') + '"' : 'Solo @etiquetados'} · ${job.tagsPerComment} tags</span>
               </div>
             </div>
           `;
@@ -1218,18 +1570,25 @@
       document.getElementById('statTotalCount').textContent = analytics.totalHistoricalComments || 0;
 
       const statPostTotalEl = document.getElementById('statPostTotal');
+      const statPostSubEl = document.getElementById('statPostSub');
       const statWinProbEl = document.getElementById('statWinProb');
+      const statWinSubEl = document.getElementById('statWinSub');
       const activeJob = jobs.find((j) => j.running) || jobs[0];
 
       if (activeJob && activeJob.postTotalComments) {
         const myInPost = activeJob.myTotalInPost || activeJob.completed || 0;
         const rawPct = activeJob.probabilities ? activeJob.probabilities.rawPercent : 0;
         const realPct = activeJob.probabilities ? activeJob.probabilities.estimatedRealPercent : 0;
-        statPostTotalEl.innerHTML = `${activeJob.postTotalComments.toLocaleString()} <span style="font-size: 0.78rem; color: var(--muted);">(${myInPost} tuyos = ${rawPct}%)</span>`;
-        statWinProbEl.innerHTML = `${realPct}% <span style="font-size: 0.76rem; color: var(--muted);">(${rawPct}% bruto)</span>`;
+        const oneInX = activeJob.probabilities?.oneInX ? `1 en ${activeJob.probabilities.oneInX}` : '';
+        statPostTotalEl.textContent = activeJob.postTotalComments.toLocaleString();
+        statPostSubEl.textContent = `${myInPost} tuyos (${rawPct}% bruto)`;
+        statWinProbEl.textContent = `${realPct}%`;
+        statWinSubEl.textContent = oneInX || 'Estimación real';
       } else {
         statPostTotalEl.textContent = '—';
+        statPostSubEl.textContent = 'Sin post activo';
         statWinProbEl.textContent = '—';
+        statWinSubEl.textContent = 'Calculada en vivo';
       }
 
       const tagCounts = analytics.tagCounts || {};
@@ -1239,21 +1598,19 @@
 
       if (entries.length === 0) {
         topEl.textContent = '—';
-        rankingEl.textContent = 'Sin etiquetas registradas todavía.';
+        rankingEl.innerHTML = '';
         return;
       }
 
       const totalTags = entries.reduce((sum, [, count]) => sum + count, 0);
       const [topUser, topCount] = entries[0];
-      topEl.textContent = `${topUser} (${topCount})`;
+      topEl.textContent = `${topUser}`;
+      document.getElementById('tagRankingSummary').textContent = `${topCount} menciones (${Math.round((topCount / totalTags) * 100)}%)`;
 
       rankingEl.innerHTML = entries
-        .map(([user, count], idx) => {
+        .map(([user, count]) => {
           const pct = totalTags > 0 ? Math.round((count / totalTags) * 100) : 0;
-          const medal = idx === 0 ? '🥇 ' : idx === 1 ? '🥈 ' : idx === 2 ? '🥉 ' : '';
-          return `<span style="background: #181b23; border: 1px solid var(--border); padding: 4px 9px; border-radius: 999px; color: #e2e8f0;">
-            ${medal}<strong>${user}</strong>: ${count} (${pct}%)
-          </span>`;
+          return `<span class="tag-chip tabular"><strong>${user}</strong> ${count} (${pct}%)</span>`;
         })
         .join('');
     }
@@ -1269,7 +1626,7 @@
         return;
       }
       penalizedBanner.style.display = 'flex';
-      penalizedText.innerHTML = `⚠️ <strong>Movidos automáticamente a Ocasionales con peso mínimo (0.15x) por bloqueo/restricción:</strong> ${pKeys.join(', ')}`;
+      penalizedText.innerHTML = `Peso mínimo (0.15x) por restricción de mención: <span class="mono">${pKeys.join(', ')}</span>`;
     }
 
     async function pollStatus() {
@@ -1291,29 +1648,25 @@
     }
 
     clearPenaltyBtn.addEventListener('click', async () => {
-      try {
-        const res = await fetch('/api/clear-penalty', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          renderPenalizedBanner(data.userGroups);
-          showStatus('success', '♻️ Peso normal restaurado para todos los usuarios.');
-        }
-      } catch {}
+      const res = await fetch('/api/clear-penalty', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        renderPenalizedBanner(data.userGroups);
+        showStatus('success', 'Peso normal restaurado.');
+      }
     });
 
     document.getElementById('resetStatsBtn').addEventListener('click', async () => {
-      try {
-        const res = await fetch('/api/reset-stats', { method: 'POST' });
-        const data = await res.json();
-        if (data.ok) {
-          renderAnalytics(data.analytics);
-          showStatus('info', '🔄 Estadísticas globales reiniciadas a cero.');
-        }
-      } catch {}
+      const res = await fetch('/api/reset-stats', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        renderAnalytics(data.analytics);
+        showStatus('info', 'Contadores globales reiniciados.');
+      }
     });
 
     document.getElementById('openDashboardBtn').addEventListener('click', async () => {
@@ -1331,9 +1684,7 @@
           occasionalUsersInput.value = (data.userGroups.occasionalUsers || []).join('\n');
           renderPenalizedBanner(data.userGroups);
         }
-        if (data.accounts) {
-          renderAccountsManager(data.accounts);
-        }
+        if (data.accounts) renderAccountsManager(data.accounts);
         if (data.telegram) {
           tgBotTokenInput.value = data.telegram.botToken || '';
           tgChatIdInput.value = data.telegram.chatId || '';
@@ -1357,7 +1708,7 @@
               cfg.totalComments ?? 100
             );
             loadedFromGallery = true;
-            showStatus('info', `📌 Post #${loadPostKey} cargado desde tu Galería con su configuración anterior.`);
+            showStatus('info', `Post ${loadPostKey} cargado desde la galería con su configuración.`);
           }
         }
 
@@ -1384,13 +1735,10 @@
           frequentUsersInput.value = frequentUsers.join('\n');
           occasionalUsersInput.value = occasionalUsers.join('\n');
           updateAllPreviews();
-          showStatus(
-            'success',
-            `💾 ¡Guardados ${frequentUsers.length} frecuentes y ${occasionalUsers.length} ocasionales (${allUsers.length} total)!`
-          );
+          showStatus('success', `Guardados ${frequentUsers.length} frecuentes y ${occasionalUsers.length} ocasionales (${allUsers.length} total).`);
         }
       } catch (err) {
-        showStatus('error', '⚠️ No se pudo guardar la lista: ' + err.message);
+        showStatus('error', err.message);
       }
     });
 
@@ -1419,24 +1767,16 @@
         const scheduledStartTime = row.querySelector('.row-schedule').value || '';
 
         if (!postUrl) {
-          showStatus('error', '⚠️ Por favor pega el link del post o reel en todas las filas agregadas.');
+          showStatus('error', 'Pega la URL del post o reel antes de iniciar.');
           row.querySelector('.row-url').focus();
           return;
         }
-
         if (tagsPerComment > 0 && allUsers.length < tagsPerComment) {
-          showStatus(
-            'error',
-            `⚠️ Pediste etiquetar a ${tagsPerComment} usuario(s), pero solo hay ${allUsers.length} entre tus dos listas.`
-          );
+          showStatus('error', `Pediste ${tagsPerComment} etiquetados pero solo hay ${allUsers.length} usuarios en tus listas.`);
           return;
         }
-
         if (tagsPerComment === 0 && !baseComment && !autoDetectRules) {
-          showStatus(
-            'error',
-            '⚠️ Si eliges etiquetar 0 usuarios y dejas el mensaje en blanco, el comentario estará vacío.'
-          );
+          showStatus('error', 'Define al menos 1 etiquetado o un mensaje.');
           return;
         }
 
@@ -1473,9 +1813,7 @@
             body: JSON.stringify(item),
           });
           const data = await res.json();
-          if (!res.ok || !data.ok) {
-            throw new Error(data.error || 'No se pudo iniciar uno de los posts.');
-          }
+          if (!res.ok || !data.ok) throw new Error(data.error || 'No se pudo iniciar la tarea.');
           if (Array.isArray(data.jobIds)) {
             startedIds.push(...data.jobIds.map((id) => '#' + id));
           } else {
@@ -1486,10 +1824,7 @@
         postsBuilder.innerHTML = '';
         createPostEntryRow();
 
-        showStatus(
-          'success',
-          `🚀 ¡Tarea(s) ${startedIds.join(', ')} iniciada(s) o programada(s)!`
-        );
+        showStatus('success', `Iniciado(s) ${startedIds.join(', ')} en segundo plano.`);
         pollStatus();
 
         const autoMinimizeCheckbox = document.getElementById('autoMinimize');
@@ -1499,16 +1834,13 @@
           }, 1200);
         }
       } catch (err) {
-        showStatus('error', '❌ Error: ' + err.message);
+        showStatus('error', err.message);
       }
     });
 
-    const minimizeBtn = document.getElementById('minimizeBtn');
-    if (minimizeBtn) {
-      minimizeBtn.addEventListener('click', async () => {
-        await fetch('/api/minimize', { method: 'POST' }).catch(() => {});
-      });
-    }
+    document.getElementById('minimizeBtn').addEventListener('click', async () => {
+      await fetch('/api/minimize', { method: 'POST' }).catch(() => {});
+    });
 
     stopAllBtn.addEventListener('click', async () => {
       await fetch('/api/stop-batch', {
@@ -1516,7 +1848,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ all: true }),
       });
-      showStatus('info', '⏹️ Deteniendo todos los posts activos...');
+      showStatus('info', 'Deteniendo todas las tareas activas...');
     });
 
     goIgTopBtn.addEventListener('click', async () => {
@@ -1524,7 +1856,6 @@
     });
 
     closeBtn.addEventListener('click', async () => {
-      showStatus('info', '🔒 Cerrando navegador y finalizando proceso...');
       await fetch('/api/shutdown', { method: 'POST' }).catch(() => {});
       window.close();
     });
