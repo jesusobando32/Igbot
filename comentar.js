@@ -1025,21 +1025,55 @@ async function extractAndAnalyzeGiveawayRules(page, postUrl = '', interceptedCap
 
 /**
  * Da Like ❤️ automáticamente al post/reel (si aún no tiene Like) y sigue a la cuenta organizadora.
+ * Filtra por tamaño del ícono SVG (>= 20px) para apuntar exclusivamente al botón de Like
+ * principal del post (24x24px) y nunca a los corazones pequeños (12x12px) de los comentarios.
  */
 async function performAutoLikeAndFollow(page) {
   const actionsDone = [];
   try {
-    const likeSvg = page.locator(
-      'article section svg[aria-label="Me gusta"], ' +
-      'article section svg[aria-label="Like"], ' +
-      'main svg[aria-label="Me gusta"], ' +
-      'main svg[aria-label="Like"]'
-    ).first();
+    const likeStatus = await page.evaluate(() => {
+      const svgs = Array.from(document.querySelectorAll('svg[aria-label]'));
 
-    if (await likeSvg.isVisible({ timeout: 2500 }).catch(() => false)) {
-      const likeBtn = likeSvg.locator('xpath=ancestor::div[@role="button" or self::button][1]').first();
-      if (await likeBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
-        await likeBtn.click().catch(() => {});
+      // 1. Verificar si el post YA tiene Like (ícono grande >= 20px con "Ya no me gusta" / "Unlike")
+      for (const svg of svgs) {
+        const label = (svg.getAttribute('aria-label') || '').trim().toLowerCase();
+        if (label === 'ya no me gusta' || label === 'unlike') {
+          const rect = svg.getBoundingClientRect();
+          if (rect.width >= 20 && rect.height >= 20) {
+            return { status: 'already_liked' };
+          }
+        }
+      }
+
+      // 2. Buscar el ícono de "Me gusta" / "Like" grande (>= 20px) del post principal
+      for (const svg of svgs) {
+        const label = (svg.getAttribute('aria-label') || '').trim().toLowerCase();
+        if (label === 'me gusta' || label === 'like') {
+          const rect = svg.getBoundingClientRect();
+          if (rect.width >= 20 && rect.height >= 20 && rect.x > 80) {
+            const clickTarget =
+              svg.closest('div[role="button"], button, span[role="button"]') || svg;
+            clickTarget.click();
+            return { status: 'clicked', width: rect.width, height: rect.height };
+          }
+        }
+      }
+
+      return { status: 'not_found' };
+    });
+
+    if (likeStatus.status === 'clicked') {
+      actionsDone.push('❤️ Like dado al post');
+      await page.waitForTimeout(900);
+    } else if (likeStatus.status === 'already_liked') {
+      actionsDone.push('❤️ El post ya tenía Like');
+    } else {
+      // Fallback con locator directo buscando el SVG de 24px
+      const bigLike = page
+        .locator('svg[aria-label="Me gusta"][height="24"], svg[aria-label="Like"][height="24"]')
+        .first();
+      if (await bigLike.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await bigLike.click({ force: true }).catch(() => {});
         actionsDone.push('❤️ Like dado al post');
         await page.waitForTimeout(900);
       }
