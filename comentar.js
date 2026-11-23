@@ -757,6 +757,14 @@ const WORD_NUMBERS_ES = {
   one: 1, two: 2, three: 3, four: 4, five: 5,
 };
 
+function toCanonicalPostUrl(rawUrl) {
+  const code = normalizePostKey(rawUrl);
+  if (code) {
+    return `https://www.instagram.com/p/${code}/`;
+  }
+  return rawUrl;
+}
+
 /**
  * Analiza el texto/descripción de un post de sorteo eliminando todo el relleno publicitario
  * y extrayendo únicamente las 4 reglas accionables que necesitas saber:
@@ -766,7 +774,7 @@ const WORD_NUMBERS_ES = {
  * 4. 📅 Cuándo termina / cierra el sorteo (`deadlineRule`, `deadlineText`, `isClosed`)
  */
 function parseGiveawayRulesFromCaption(captionText = '') {
-  const clean = String(captionText || '').replace(/\r/g, '');
+  const clean = String(captionText || '').replace(/\r/g, '').trim();
   const result = {
     detectedTagsCount: null,
     detectedKeyword: '',
@@ -774,6 +782,7 @@ function parseGiveawayRulesFromCaption(captionText = '') {
     closeReason: '',
     deadlineText: '',
     deadlineIso: '',
+    rawCaption: clean.slice(0, 2000),
     summary: [],
     digest: {
       questionOrPrompt: '',
@@ -784,7 +793,7 @@ function parseGiveawayRulesFromCaption(captionText = '') {
     },
   };
 
-  if (!clean.trim()) return result;
+  if (!clean) return result;
 
   // Dividir la descripción en líneas/oraciones limpias para filtrar el relleno
   const lines = clean
@@ -807,7 +816,7 @@ function parseGiveawayRulesFromCaption(captionText = '') {
   const currentYear = now.getFullYear();
 
   const dateEsRegex =
-    /(?:hasta\s+el|cierra\s+el|finaliza\s+el|termina\s+el|sorteo\s+el|ganador(?:es)?\s+el|anunciamos\s+el|válido\s+hasta\s+el|valido\s+hasta\s+el|se\s+sortea\s+el)\s+(?:día\s+|dia\s+|lunes\s+|martes\s+|miércoles\s+|miercoles\s+|jueves\s+|viernes\s+|sábado\s+|sabado\s+|domingo\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de(?:l)?\s+(\d{4}))?/i;
+    /(?:hasta\s+el|cierra\s+el|finaliza\s+el|termina\s+el|sorteo\s+el|ganador(?:es)?\s+el|anunciamos\s+el|anunciaremos\s+el|válido\s+hasta\s+el|valido\s+hasta\s+el|se\s+sortea\s+el|el\s+ganador\s+se\s+anunciará\s+el)\s+(?:día\s+|dia\s+|lunes\s+|martes\s+|miércoles\s+|miercoles\s+|jueves\s+|viernes\s+|sábado\s+|sabado\s+|domingo\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de(?:l)?\s+(\d{4}))?/i;
 
   const dateEsMatch = clean.match(dateEsRegex);
   if (dateEsMatch) {
@@ -855,9 +864,8 @@ function parseGiveawayRulesFromCaption(captionText = '') {
     }
   }
 
-  // Extraer la oración limpia que habla de la fecha de cierre / anuncio de ganador
   const deadlineLines = lines.filter((l) =>
-    /(?:hasta\s+el|cierra|finaliza|termina|ganador|anunciaremos|anunciamos|sortea|sorteo\s+el)/i.test(l)
+    /(?:hasta\s+el|cierra|finaliza|termina|ganador|anunciaremos|anunciamos|sortea|sorteo\s+el|válido\s+hasta)/i.test(l)
   );
   if (deadlineLines.length > 0) {
     result.digest.deadlineRule = deadlineLines.slice(0, 2).join(' — ');
@@ -869,7 +877,7 @@ function parseGiveawayRulesFromCaption(captionText = '') {
 
   // 3. Detectar cuántos amigos pide etiquetar y extraer la línea exacta de etiquetado
   const mentionRuleRegex =
-    /(?:etiqueta(?:r|ndo)?|menciona(?:r|ndo)?|tag(?:gear|ging)?|comenta(?:r)?\s+etiquetando)\s+(?:a\s+)?(\d+|un|uno|una|dos|tres|cuatro|cinco|one|two|three|four|five)\s+(?:amigo|persona|cuenta|usuario|friend|people)/i;
+    /(?:etiqueta(?:r|ndo)?|menciona(?:r|ndo)?|tag(?:gear|ging)?|comenta(?:r)?\s+(?:etiquetando|mencionando))\s+(?:a\s+)?(\d+|un|uno|una|dos|tres|cuatro|cinco|one|two|three|four|five)\s+(?:amigo|persona|cuenta|usuario|friend|people)/i;
   const mentionMatch = clean.match(mentionRuleRegex);
   if (mentionMatch) {
     const rawNum = mentionMatch[1].toLowerCase();
@@ -891,7 +899,7 @@ function parseGiveawayRulesFromCaption(captionText = '') {
     result.digest.taggingRule = 'No especifica mínimo (por defecto 2 etiquetados)';
   }
 
-  // 4. Detectar si pide comentar una palabra clave o responder una pregunta en el comentario
+  // 4. Detectar si pide comentar una palabra clave o responder una PREGUNTA REAL (sin falsos positivos de "comenta etiquetando")
   const keywordRegex =
     /(?:comenta(?:r)?|escribe|escribir|pon(?:er)?|responde(?:r)?)\s+(?:la\s+palabra\s+|la\s+frase\s+)?["“«']([^"”»'\n]{2,35})["”»']/i;
   const kwMatch = clean.match(keywordRegex);
@@ -900,21 +908,28 @@ function parseGiveawayRulesFromCaption(captionText = '') {
     result.summary.push(`💬 Palabra clave: "${result.detectedKeyword}"`);
   }
 
-  // Buscar líneas que pidan responder una pregunta o escribir algo en los comentarios
   const questionOrCommentLines = lines.filter((l) => {
-    const hasCommentVerb =
-      /(?:responde|cuéntanos|cuentanos|dinos|escribe|comenta|pon\s+en\s+los\s+comentarios|cuál\s+es|cual\s+es|qué\s+prefieres|que\s+prefieres|por\s+qué|por\s+que|qué\s+te\s+gustaría)/i.test(
+    // Excluir líneas que únicamente hablan de etiquetar amigos o "más comentarios = más oportunidades"
+    const isPureTaggingLine =
+      /(?:etiqueta|menciona|más\s+comentarios|mas\s+comentarios|sin\s+repetir|cuentas\s+falsas|famosos)/i.test(l) &&
+      !/[¿?]|cuéntanos|cuentanos|dinos|responde|cuál|cual|qué\s+prefieres|por\s+qué|favorit/i.test(l);
+    if (isPureTaggingLine) return false;
+
+    const hasRealPromptVerb =
+      /(?:responde|cuéntanos|cuentanos|dinos|cuál\s+es|cual\s+es|qué\s+prefieres|que\s+prefieres|por\s+qué|por\s+que|qué\s+te\s+gustaría|con\s+quién\s+compartirías|escribe\s+(?:tu|el|la|qué|cuál)|comenta\s+(?:tu|cuál|qué|por\s+qué|con\s+quién|el\s+nombre))/i.test(
         l
       );
-    const isDirectQuestion = /[¿?]/.test(l) && /(?:cuál|cual|qué|que|quién|quien|cómo|como|dónde|donde|por\s+qué|favorit)/i.test(l);
-    return hasCommentVerb || isDirectQuestion;
+    const isDirectQuestion =
+      /[¿?]/.test(l) &&
+      /(?:cuál|cual|qué|que|quién|quien|cómo|como|dónde|donde|por\s+qué|favorit|prefieres|gustaría)/i.test(l);
+    return hasRealPromptVerb || isDirectQuestion;
   });
 
   if (result.detectedKeyword) {
     result.digest.questionOrPrompt = `Escribir la palabra exacta: "${result.detectedKeyword}"`;
   } else if (questionOrCommentLines.length > 0) {
     result.digest.questionOrPrompt = questionOrCommentLines.slice(0, 2).join(' — ');
-    result.summary.push(`❓ Pide responder/comentar algo (revisa el resumen abajo)`);
+    result.summary.push(`❓ Pide responder/comentar algo (revisa el resumen)`);
   } else {
     result.digest.questionOrPrompt = 'No pide responder pregunta (puedes enviar solo los @etiquetados)';
   }
@@ -938,15 +953,25 @@ function parseGiveawayRulesFromCaption(captionText = '') {
 }
 
 /**
- * Extrae únicamente la descripción real (caption) del post de Instagram
- * (desde el JSON interno de Relay/Polaris, h1 del artículo o meta description)
- * sin mezclar comentarios de otros usuarios ni basura del pie de página.
+ * Extrae únicamente la descripción real completa (caption) del post/reel de Instagram
+ * expandiendo "... / más" si está colapsada en un Reel y leyendo también JSON interno.
  */
-async function extractAndAnalyzeGiveawayRules(page, postUrl = '') {
+async function extractAndAnalyzeGiveawayRules(page, postUrl = '', interceptedCaption = '') {
   try {
+    // Si estamos en un Reel con descripción colapsada detrás de "más" o "...", intentar expandirla
+    try {
+      const expandBtn = page.locator(
+        'span:text-is("más"), span:text-is("more"), div[role="button"]:text-is("más"), div[role="button"]:text-is("more"), span:text-is("...")'
+      ).first();
+      if (await expandBtn.isVisible({ timeout: 1200 }).catch(() => false)) {
+        await expandBtn.click().catch(() => {});
+        await page.waitForTimeout(500);
+      }
+    } catch {}
+
     const shortcode = normalizePostKey(postUrl || page.url());
-    const realCaption = await page.evaluate((code) => {
-      // 1. Intentar desde los scripts JSON internos de Instagram ("caption":{"text":"..."})
+    const domCaption = await page.evaluate((code) => {
+      // 1. Buscar en scripts JSON internos de Instagram ("caption":{"text":"..."})
       const scripts = Array.from(document.querySelectorAll('script[type="application/json"]'));
       for (const s of scripts) {
         const txt = s.textContent || '';
@@ -971,7 +996,7 @@ async function extractAndAnalyzeGiveawayRules(page, postUrl = '') {
         }
       }
 
-      // 2. Intentar desde el nodo H1 dentro del artículo (donde Instagram renderiza el caption principal)
+      // 2. Buscar en el nodo H1 (vista de Post /p/)
       const h1 = document.querySelector('article h1, main h1');
       if (h1 && h1.innerText && h1.innerText.trim().length > 10) {
         return h1.innerText.trim();
@@ -986,25 +1011,29 @@ async function extractAndAnalyzeGiveawayRules(page, postUrl = '') {
       return quoteMatch ? quoteMatch[1] : metaDesc;
     }, shortcode);
 
-    return parseGiveawayRulesFromCaption(realCaption);
+    // Usar el texto más completo entre el interceptado por red y el extraído del DOM
+    const bestCaption =
+      interceptedCaption && interceptedCaption.length > (domCaption || '').length
+        ? interceptedCaption
+        : domCaption || interceptedCaption || '';
+
+    return parseGiveawayRulesFromCaption(bestCaption);
   } catch {
-    return parseGiveawayRulesFromCaption('');
+    return parseGiveawayRulesFromCaption(interceptedCaption || '');
   }
 }
 
 /**
- * Da Like ❤️ automáticamente al post (si aún no tiene Like) y sigue a la cuenta organizadora
- * si aparece el botón "Seguir" / "Follow" en la cabecera del post.
+ * Da Like ❤️ automáticamente al post/reel (si aún no tiene Like) y sigue a la cuenta organizadora.
  */
 async function performAutoLikeAndFollow(page) {
   const actionsDone = [];
   try {
-    // 1. Verificar si aún no le hemos dado Like (si ya tiene Like el aria-label cambia a "Ya no me gusta" o "Unlike")
     const likeSvg = page.locator(
       'article section svg[aria-label="Me gusta"], ' +
       'article section svg[aria-label="Like"], ' +
-      'main section svg[aria-label="Me gusta"], ' +
-      'main section svg[aria-label="Like"]'
+      'main svg[aria-label="Me gusta"], ' +
+      'main svg[aria-label="Like"]'
     ).first();
 
     if (await likeSvg.isVisible({ timeout: 2500 }).catch(() => false)) {
@@ -1018,14 +1047,13 @@ async function performAutoLikeAndFollow(page) {
   } catch {}
 
   try {
-    // 2. Verificar si en el header del post aparece el botón "Seguir" / "Follow" del organizador
     const followBtn = page.locator(
       'article header button:text-is("Seguir"), ' +
       'article header button:text-is("Follow"), ' +
       'article header div[role="button"]:text-is("Seguir"), ' +
       'article header div[role="button"]:text-is("Follow"), ' +
-      'main header button:text-is("Seguir"), ' +
-      'main header button:text-is("Follow")'
+      'main button:text-is("Seguir"), ' +
+      'main button:text-is("Follow")'
     ).first();
 
     if (await followBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
@@ -1202,22 +1230,25 @@ async function extractPostCommentCount(page, postUrl = '') {
   }
 }
 
-async function extractPostDetailsAndThumbnail(page) {
+async function extractPostDetailsAndThumbnail(page, postUrl = '', interceptedCoverUrl = '') {
   let author = '';
   let caption = '';
   let thumbnail = '';
+  let coverUrl = interceptedCoverUrl || '';
 
   try {
-    const meta = await page.evaluate(() => {
+    const shortcode = normalizePostKey(postUrl || page.url());
+    const meta = await page.evaluate((code) => {
       const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content') || '';
+      const ogImage = document.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
       const metaDesc =
         document.querySelector('meta[name="description"]')?.getAttribute('content') ||
         document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
         '';
 
       let foundAuthor = '';
-      const headerLink = document.querySelector('article header a[href^="/"], main header a[href^="/"]');
-      if (headerLink && headerLink.textContent) {
+      const headerLink = document.querySelector('article header a[href^="/"], main header a[href^="/"], a[role="link"][href^="/"][tabindex="0"]');
+      if (headerLink && headerLink.textContent && headerLink.textContent.trim().length > 1) {
         foundAuthor = '@' + headerLink.textContent.trim().replace(/^@/, '');
       } else if (ogTitle) {
         const m = ogTitle.match(/^([^•(]+?)\s*(?:on Instagram|en Instagram)/i);
@@ -1232,30 +1263,86 @@ async function extractPostDetailsAndThumbnail(page) {
         foundCaption = ogTitle;
       }
 
+      // Buscar URL oficial de portada del post/reel en JSON interno o en og:image o en <img> grande
+      let foundCoverUrl = ogImage || '';
+
+      if (!foundCoverUrl) {
+        const scripts = Array.from(document.querySelectorAll('script[type="application/json"]'));
+        for (const s of scripts) {
+          const txt = s.textContent || '';
+          if (code && !txt.includes(code)) continue;
+          const m =
+            txt.match(/"image_versions2"\s*:\s*\{\s*"candidates"\s*:\s*\[\s*\{\s*[^}]*"url"\s*:\s*"([^"]+)"/) ||
+            txt.match(/"display_url"\s*:\s*"([^"]+)"/) ||
+            txt.match(/"thumbnail_src"\s*:\s*"([^"]+)"/);
+          if (m && m[1]) {
+            try {
+              foundCoverUrl = JSON.parse(`"${m[1]}"`);
+            } catch {
+              foundCoverUrl = m[1].replace(/\\\//g, '/');
+            }
+            break;
+          }
+        }
+      }
+
+      if (!foundCoverUrl) {
+        // Buscar la imagen más grande visible (evitando avatares pequeños de perfil)
+        const imgs = Array.from(document.querySelectorAll('img[src]'));
+        let bestImg = null;
+        let bestArea = 0;
+        for (const img of imgs) {
+          const rect = img.getBoundingClientRect();
+          const area = rect.width * rect.height;
+          if (rect.width >= 160 && rect.height >= 160 && area > bestArea) {
+            bestArea = area;
+            bestImg = img.src;
+          }
+        }
+        if (bestImg) foundCoverUrl = bestImg;
+      }
+
       return {
         author: foundAuthor.slice(0, 50),
-        caption: foundCaption.slice(0, 160),
+        caption: foundCaption.slice(0, 180),
+        coverUrl: foundCoverUrl,
       };
-    });
+    }, shortcode);
 
     author = meta.author || '';
     caption = meta.caption || '';
-  } catch {}
-
-  try {
-    const mediaLocator = page.locator('article img, article video, main img, main video').first();
-    if (await mediaLocator.isVisible({ timeout: 2500 }).catch(() => false)) {
-      const buf = await mediaLocator.screenshot({ type: 'jpeg', quality: 55 });
-      thumbnail = `data:image/jpeg;base64,${buf.toString('base64')}`;
-    } else {
-      const buf = await page.screenshot({
-        type: 'jpeg',
-        quality: 50,
-        clip: { x: 80, y: 70, width: 600, height: 450 },
-      });
-      thumbnail = `data:image/jpeg;base64,${buf.toString('base64')}`;
+    if (!coverUrl && meta.coverUrl) {
+      coverUrl = meta.coverUrl;
     }
   } catch {}
+
+  // Descargar la portada oficial vía Playwright request (evita CORS y cuadros blancos de video)
+  if (coverUrl && /^https?:\/\//i.test(coverUrl)) {
+    try {
+      const resp = await page.context().request.get(coverUrl, { timeout: 10000 });
+      if (resp.ok()) {
+        const buf = await resp.body();
+        if (buf && buf.length > 1000) {
+          const contentType = resp.headers()['content-type'] || 'image/jpeg';
+          thumbnail = `data:${contentType.split(';')[0]};base64,${buf.toString('base64')}`;
+        }
+      }
+    } catch {}
+  }
+
+  // Fallback a screenshot solo de una imagen <img> grande visible (nunca de <video> vacío)
+  if (!thumbnail) {
+    try {
+      const imgLocator = page.locator('article img, main img').first();
+      if (await imgLocator.isVisible({ timeout: 2000 }).catch(() => false)) {
+        const box = await imgLocator.boundingBox();
+        if (box && box.width >= 150 && box.height >= 150) {
+          const buf = await imgLocator.screenshot({ type: 'jpeg', quality: 65 });
+          thumbnail = `data:image/jpeg;base64,${buf.toString('base64')}`;
+        }
+      }
+    } catch {}
+  }
 
   return { author, caption, thumbnail };
 }
@@ -1382,6 +1469,56 @@ async function inspectAndDismissPublishAlert(page, selectedUsers = []) {
   return { type: 'none' };
 }
 
+const COMMENT_BOX_SELECTOR = [
+  'textarea[aria-label*="comentario" i]',
+  'textarea[aria-label*="comment" i]',
+  'textarea[placeholder*="comentario" i]',
+  'textarea[placeholder*="comment" i]',
+  'input[aria-label*="comentario" i]',
+  'input[aria-label*="comment" i]',
+  'input[placeholder*="comentario" i]',
+  'input[placeholder*="comment" i]',
+  'div[contenteditable="true"][aria-label*="comentario" i]',
+  'div[contenteditable="true"][aria-label*="comment" i]',
+  'div[role="textbox"][aria-label*="comentario" i]',
+  'div[role="textbox"][aria-label*="comment" i]',
+].join(', ');
+
+/**
+ * En la vista de Reels (/reel/...), la caja de comentarios está oculta hasta hacer clic
+ * en el ícono de globo de comentarios (💬). Esta función detecta si estamos en un Reel
+ * y abre el cajón de comentarios automáticamente.
+ */
+async function ensureCommentDrawerOpen(jobPage) {
+  let commentBox = jobPage.locator(COMMENT_BOX_SELECTOR).first();
+  if (await commentBox.isVisible({ timeout: 2500 }).catch(() => false)) {
+    return commentBox;
+  }
+
+  // Intentar abrir el cajón de comentarios del Reel haciendo clic en el ícono 💬
+  const commentIconSvg = jobPage.locator(
+    'svg[aria-label="Comentar"], svg[aria-label="Comment"], svg[aria-label*="comentario" i], svg[aria-label*="comment" i]'
+  ).first();
+
+  if (await commentIconSvg.isVisible({ timeout: 2500 }).catch(() => false)) {
+    console.log('💬 [Reel] Abriendo cajón de comentarios del Reel...');
+    const clickTarget = commentIconSvg.locator('xpath=ancestor::div[@role="button" or self::button][1]').first();
+    if (await clickTarget.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await clickTarget.click().catch(() => {});
+    } else {
+      await commentIconSvg.click().catch(() => {});
+    }
+    await jobPage.waitForTimeout(1600);
+  }
+
+  commentBox = jobPage.locator(COMMENT_BOX_SELECTOR).first();
+  if (await commentBox.isVisible({ timeout: 5000 }).catch(() => false)) {
+    return commentBox;
+  }
+
+  return null;
+}
+
 async function publicarUnComentarioEnPagina(
   jobPage,
   commentToSend,
@@ -1393,26 +1530,19 @@ async function publicarUnComentarioEnPagina(
 ) {
   await dismissUnexpectedInstagramAlerts(jobPage);
 
-  const commentSelector = [
-    'textarea[aria-label*="comentario" i]',
-    'textarea[aria-label*="comment" i]',
-    'textarea[placeholder*="comentario" i]',
-    'textarea[placeholder*="comment" i]',
-  ].join(', ');
+  let commentBox = await ensureCommentDrawerOpen(jobPage);
 
-  let commentBox = jobPage.locator(commentSelector).first();
-  let isVisible = await commentBox.isVisible({ timeout: 10000 }).catch(() => false);
-
-  if (!isVisible) {
-    console.warn('🔄 [Contingencia] Caja de comentarios no visible. Recargando pestaña del post...');
-    await jobPage.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+  if (!commentBox) {
+    // Si está en /reel/, intentar abrir en la vista clásica /p/SHORTCODE/ donde el cajón siempre está abierto
+    const canonicalUrl = toCanonicalPostUrl(jobPage.url());
+    console.warn(`🔄 [Contingencia] Caja de comentarios no visible. Probando vista directa: ${canonicalUrl}`);
+    await jobPage.goto(canonicalUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
     await jobPage.waitForTimeout(2500);
     await dismissCookiesModal(jobPage);
     await dismissPostLoginModals(jobPage);
     await dismissUnexpectedInstagramAlerts(jobPage);
 
-    // Verificar si el sorteo se cerró en la descripción al recargar
-    const liveRules = await extractAndAnalyzeGiveawayRules(jobPage);
+    const liveRules = await extractAndAnalyzeGiveawayRules(jobPage, canonicalUrl);
     if (liveRules.isClosed) {
       return {
         type: 'giveaway_closed',
@@ -1420,22 +1550,24 @@ async function publicarUnComentarioEnPagina(
       };
     }
 
-    commentBox = jobPage.locator(commentSelector).first();
-    isVisible = await commentBox.isVisible({ timeout: 10000 }).catch(() => false);
-    if (!isVisible) {
+    commentBox = await ensureCommentDrawerOpen(jobPage);
+    if (!commentBox) {
       throw new Error(
         'No se encontró la caja de comentarios (posiblemente cerraron los comentarios del sorteo).'
       );
     }
   }
 
-  await commentBox.scrollIntoViewIfNeeded();
+  await commentBox.scrollIntoViewIfNeeded().catch(() => {});
   await commentBox.click();
   await jobPage.waitForTimeout(350);
 
-  const activeCommentBox = jobPage.locator(commentSelector).first();
+  const activeCommentBox = jobPage.locator(COMMENT_BOX_SELECTOR).first();
   await activeCommentBox.click();
-  await activeCommentBox.fill('');
+  await activeCommentBox.fill('').catch(async () => {
+    await jobPage.keyboard.press('Control+A').catch(() => {});
+    await jobPage.keyboard.press('Backspace').catch(() => {});
+  });
 
   await humanType(activeCommentBox, commentToSend, minDelay, maxDelay, shouldCancel, simulateTypos);
   await jobPage.waitForTimeout(500);
@@ -1446,7 +1578,9 @@ async function publicarUnComentarioEnPagina(
     'form button:has-text("Publicar"), ' +
     'form button:has-text("Post"), ' +
     'div[role="button"]:text-is("Publicar"), ' +
-    'div[role="button"]:text-is("Post")'
+    'div[role="button"]:text-is("Post"), ' +
+    'button:text-is("Publicar"), ' +
+    'button:text-is("Post")'
   ).first();
 
   if (await publishButton.isVisible({ timeout: 3000 }).catch(() => false)) {
@@ -1463,7 +1597,9 @@ async function publicarUnComentarioEnPagina(
     return alertResult;
   }
 
-  const remainingValue = await activeCommentBox.inputValue().catch(() => '');
+  const remainingValue = await activeCommentBox.inputValue().catch(async () => {
+    return (await activeCommentBox.innerText().catch(() => '')) || '';
+  });
   if (remainingValue && remainingValue.trim().length > 0) {
     await activeCommentBox.fill('').catch(() => {});
     return {
@@ -1616,10 +1752,13 @@ function crearYEjecutarTareaPost(browser, config) {
       const jobPage = await context.newPage();
       job.page = jobPage;
 
+      let interceptedCaption = '';
+      let interceptedCoverUrl = '';
+
       jobPage.on('response', async (response) => {
         try {
           const url = response.url();
-          if (url.includes('graphql') || url.includes('/api/v1/media/') || url.includes('/comments/')) {
+          if (url.includes('graphql') || url.includes('/api/v1/media/') || url.includes('/comments/') || url.includes('/clips/')) {
             const text = await response.text();
             const m =
               text.match(/"comment_count"\s*:\s*(\d+)/) ||
@@ -1631,12 +1770,33 @@ function crearYEjecutarTareaPost(browser, config) {
                 job.probabilities = calculateWinProbabilities(job.myTotalInPost, job.postTotalComments);
               }
             }
+            if (!interceptedCaption && text.includes(postKey)) {
+              const capMatch =
+                text.match(/"caption"\s*:\s*\{[^{}]*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/) ||
+                text.match(/"edge_media_to_caption"\s*:\s*\{\s*"edges"\s*:\s*\[\s*\{\s*"node"\s*:\s*\{\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+              if (capMatch && capMatch[1]) {
+                try {
+                  interceptedCaption = JSON.parse(`"${capMatch[1]}"`);
+                } catch {}
+              }
+            }
+            if (!interceptedCoverUrl && text.includes(postKey)) {
+              const imgMatch =
+                text.match(/"image_versions2"\s*:\s*\{\s*"candidates"\s*:\s*\[\s*\{\s*[^}]*"url"\s*:\s*"([^"]+)"/) ||
+                text.match(/"display_url"\s*:\s*"([^"]+)"/);
+              if (imgMatch && imgMatch[1]) {
+                try {
+                  interceptedCoverUrl = JSON.parse(`"${imgMatch[1]}"`);
+                } catch {}
+              }
+            }
           }
         } catch {}
       });
 
-      console.log(`\n🌐 [Post #${jobId} — ${accMeta.label}] Abriendo post: ${postUrl}`);
-      await jobPage.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      const targetOpenUrl = toCanonicalPostUrl(postUrl);
+      console.log(`\n🌐 [Post #${jobId} — ${accMeta.label}] Abriendo post/reel: ${targetOpenUrl}`);
+      await jobPage.goto(targetOpenUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await jobPage.waitForTimeout(2500);
 
       await dismissCookiesModal(jobPage);
@@ -1651,7 +1811,7 @@ function crearYEjecutarTareaPost(browser, config) {
       }
 
       // 2. Analizar Reglas del Sorteo y Fecha Límite ("hasta el tal día")
-      const rules = await extractAndAnalyzeGiveawayRules(jobPage);
+      const rules = await extractAndAnalyzeGiveawayRules(jobPage, postUrl, interceptedCaption);
       if (rules.summary.length > 0) {
         job.detectedRulesSummary = rules.summary.join(' | ');
         console.log(`🔍 [Post #${jobId}] Reglas detectadas: ${job.detectedRulesSummary}`);
@@ -1685,7 +1845,7 @@ function crearYEjecutarTareaPost(browser, config) {
 
       // 4. Extraer Comentarios Totales y Miniatura para el Dashboard
       const detectedTotal = await extractPostCommentCount(jobPage, postUrl);
-      const details = await extractPostDetailsAndThumbnail(jobPage);
+      const details = await extractPostDetailsAndThumbnail(jobPage, postUrl, interceptedCoverUrl);
 
       if (detectedTotal !== null) {
         job.postTotalComments = Math.max(detectedTotal, job.myTotalInPost);
@@ -2369,16 +2529,60 @@ function startControlServer({
       onAnalyzePostUrl: async (postUrl) => {
         const tempPage = await context.newPage();
         try {
-          await tempPage.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
-          await tempPage.waitForTimeout(2200);
+          const shortcode = normalizePostKey(postUrl);
+          let interceptedCaption = '';
+          let interceptedCoverUrl = '';
+          let interceptedCommentCount = null;
+
+          tempPage.on('response', async (response) => {
+            try {
+              const url = response.url();
+              if (url.includes('graphql') || url.includes('/api/v1/media/') || url.includes('/clips/')) {
+                const text = await response.text();
+                if (!interceptedCommentCount) {
+                  const cm =
+                    text.match(/"comment_count"\s*:\s*(\d+)/) ||
+                    text.match(/"edge_media_to_parent_comment"\s*:\s*\{\s*"count"\s*:\s*(\d+)/);
+                  if (cm) interceptedCommentCount = parseInt(cm[1], 10);
+                }
+                if (!interceptedCaption && text.includes(shortcode)) {
+                  const capMatch =
+                    text.match(/"caption"\s*:\s*\{[^{}]*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/) ||
+                    text.match(/"edge_media_to_caption"\s*:\s*\{\s*"edges"\s*:\s*\[\s*\{\s*"node"\s*:\s*\{\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+                  if (capMatch && capMatch[1]) {
+                    try {
+                      interceptedCaption = JSON.parse(`"${capMatch[1]}"`);
+                    } catch {}
+                  }
+                }
+                if (!interceptedCoverUrl && text.includes(shortcode)) {
+                  const imgMatch =
+                    text.match(/"image_versions2"\s*:\s*\{\s*"candidates"\s*:\s*\[\s*\{\s*[^}]*"url"\s*:\s*"([^"]+)"/) ||
+                    text.match(/"display_url"\s*:\s*"([^"]+)"/);
+                  if (imgMatch && imgMatch[1]) {
+                    try {
+                      interceptedCoverUrl = JSON.parse(`"${imgMatch[1]}"`);
+                    } catch {}
+                  }
+                }
+              }
+            } catch {}
+          });
+
+          const canonicalUrl = toCanonicalPostUrl(postUrl);
+          await tempPage.goto(canonicalUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+          await tempPage.waitForTimeout(2500);
           await dismissCookiesModal(tempPage);
           await dismissPostLoginModals(tempPage);
-          const rules = await extractAndAnalyzeGiveawayRules(tempPage, postUrl);
-          const totalComments = await extractPostCommentCount(tempPage, postUrl);
-          const details = await extractPostDetailsAndThumbnail(tempPage);
+
+          const rules = await extractAndAnalyzeGiveawayRules(tempPage, postUrl, interceptedCaption);
+          const domTotalComments = await extractPostCommentCount(tempPage, postUrl);
+          const totalComments = domTotalComments || interceptedCommentCount;
+          const details = await extractPostDetailsAndThumbnail(tempPage, postUrl, interceptedCoverUrl);
+
           upsertPostInCatalog(postUrl, {
             author: details.author,
-            caption: details.caption,
+            caption: rules.rawCaption ? rules.rawCaption.slice(0, 180) : details.caption,
             thumbnail: details.thumbnail,
             postTotalComments: totalComments,
             detectedRules: rules,

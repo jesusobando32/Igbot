@@ -984,6 +984,13 @@
               ? `<div style="color: #f87171; font-weight: 700; margin-bottom: 6px;">🛑 SORTEO CERRADO / VENCIDO: ${escapeHtml(a.closeReason)}</div>`
               : `<div style="color: #34d399; font-weight: 700; margin-bottom: 6px;">✅ Resumen Limpio del Sorteo (Sin Relleno) ${a.author ? '— ' + escapeHtml(a.author) : ''} ${a.postTotalComments ? `(${a.postTotalComments.toLocaleString()} comentarios actuales)` : ''}</div>`;
 
+            const rawCaptionBlock = a.rawCaption
+              ? `<details style="margin-top: 8px; font-size: 0.76rem; color: var(--muted);">
+                  <summary style="cursor: pointer; color: #94a3b8;">📄 Ver descripción completa original</summary>
+                  <div style="margin-top: 6px; padding: 8px 10px; background: #0f1117; border: 1px solid var(--border); border-radius: 6px; white-space: pre-wrap; max-height: 160px; overflow-y: auto; color: #cbd5e1;">${escapeHtml(a.rawCaption)}</div>
+                </details>`
+              : '';
+
             rulesLine.style.color = '#e2e8f0';
             rulesLine.innerHTML = `
               ${statusHeader}
@@ -1005,6 +1012,7 @@
                   <span>${escapeHtml(d.deadlineRule || 'No especifica fecha en el texto')}</span>
                 </div>
               </div>
+              ${rawCaptionBlock}
             `;
           } else {
             rulesLine.textContent = '⚠️ No se pudo leer el post: ' + (data.error || '');
